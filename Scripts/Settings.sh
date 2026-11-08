@@ -73,6 +73,48 @@ if [ "$WRT_THEME" = vantage ]; then
   printf '%s\n' 'CONFIG_PACKAGE_luci-app-vantage=y' >> .config
 fi
 
+# Keep the overview and release filenames tied to the same build timestamp.
+python3 - "$WRT_NAME" <<'PY'
+from datetime import datetime
+import json
+from pathlib import Path
+import sys
+from zoneinfo import ZoneInfo
+
+build_time = Path('files/etc/xwrt-build-time')
+build_time.parent.mkdir(parents=True, exist_ok=True)
+if not build_time.exists():
+    build_time.write_text(datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds') + '\n')
+timestamp = datetime.fromisoformat(build_time.read_text().strip()).astimezone(ZoneInfo('Asia/Shanghai'))
+label = f'{sys.argv[1]}-{timestamp:%y.%m.%d-%H.%M.%S}'
+status = Path('feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js')
+source = status.read_text()
+old = "(luciversion || '')"
+new = old + ' + ' + json.dumps(' / ' + label)
+if new not in source:
+    if source.count(old) != 1:
+        raise SystemExit('Unsupported LuCI firmware version display')
+    status.write_text(source.replace(old, new, 1))
+PY
+
+OTA_BACKEND=package/luci-app-xwrt-ota/root/usr/libexec/xwrt-ota
+if [ -f "$OTA_BACKEND" ]; then
+  python3 - "$OTA_BACKEND" <<'PY'
+from pathlib import Path
+import sys
+
+backend = Path(sys.argv[1])
+source = backend.read_text()
+date_pattern = '-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+old = f'.bin|{date_pattern}.bin) ;;'
+new = f'.bin|{date_pattern}.bin|{date_pattern}-[0-9][0-9].[0-9][0-9].[0-9][0-9].bin) ;;'
+if new not in source:
+    if old not in source:
+        raise SystemExit('Unsupported XWRT OTA firmware filename matcher')
+    backend.write_text(source.replace(old, new, 1))
+PY
+fi
+
 # APK reads this configuration for both CLI and LuCI package operations.
 APK_CONFIG=files/etc/apk/config
 mkdir -p files/etc/apk files/lib/upgrade/keep.d

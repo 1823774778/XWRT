@@ -94,6 +94,14 @@ jobs:
           ./scripts/feeds install -a
           ./scripts/feeds install -p vantage luci-theme-vantage
 
+      - name: Add XWRT OTA package
+        if: ${{ inputs.target == 'IPQ60XX' }}
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          git clone --depth=1 --single-branch --branch main \
+            https://github.com/1823774778/openwrt-ota.git "$RUNNER_TEMP/openwrt-ota"
+          cp -a "$RUNNER_TEMP/openwrt-ota/luci-app-xwrt-ota" package/luci-app-xwrt-ota
+
       - name: Prepare configuration
         env:
           TARGET: ${{ inputs.target || 'IPQ60XX' }}
