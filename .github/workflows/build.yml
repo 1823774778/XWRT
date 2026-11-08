@@ -90,7 +90,6 @@ jobs:
           ./scripts/feeds install -a -p luci
           ./scripts/feeds install -a
           ./scripts/feeds install -p vantage luci-theme-vantage
-          ./scripts/feeds install -p viking luci-app-wolultra
 
       - name: Prepare configuration
         env:
