@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -76,19 +75,14 @@ def main():
     source_commit = subprocess.check_output(
         ["git", "-C", str(source), "rev-parse", "HEAD"], text=True
     ).strip()
+    firmware = sorted(artifact for artifact in output.glob("*.bin") if artifact.is_file())
+    if not firmware:
+        raise ValueError("No .bin firmware images available for release")
     release_dir = Path("release")
     assets = release_dir / "assets"
     assets.mkdir(parents=True, exist_ok=False)
-    for artifact in sorted(output.iterdir()):
-        if artifact.is_file() and not artifact.name.startswith("sha256sums"):
-            shutil.copy2(artifact, assets / artifact.name)
-    shutil.copy2(source / ".config", assets / f"Config-{tag}.txt")
-    checksums = []
-    for artifact in sorted(assets.iterdir()):
-        with artifact.open("rb") as handle:
-            digest = hashlib.file_digest(handle, "sha256").hexdigest()
-        checksums.append(f"{digest}  {artifact.name}\n")
-    (assets / "sha256sums").write_text("".join(checksums))
+    for artifact in firmware:
+        shutil.copy2(artifact, assets / artifact.name)
 
     repository = os.environ["GITHUB_REPOSITORY"]
     kernel = overview["linux_kernel"]["version"]
@@ -132,14 +126,14 @@ def main():
             notes.extend(["", "APK：默认允许未签名的第三方软件包，安装时仍需匹配架构及依赖。"])
     notes.extend([
         "",
-        "附件包含固件、完整构建配置、软件包清单和 SHA256 校验文件。",
+        "附件仅包含 `.bin` 固件。",
         f"构建记录：https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
         "",
     ])
     (release_dir / "release-notes.md").write_text("\n".join(notes))
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as handle:
         handle.write(f"tag={tag}\nname={name}\n")
-    print(f"Prepared {len(checksums)} release assets for {tag}")
+    print(f"Prepared {len(firmware)} .bin firmware assets for {tag}")
 
 
 if __name__ == "__main__":
