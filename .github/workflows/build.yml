@@ -36,6 +36,9 @@ env:
   SOURCE_BRANCH: owrt
   BUILD_DIR: wrt
   CCACHE_MAXSIZE: 2G
+  WRT_IP: 192.168.10.1
+  WRT_SSID: XWRT
+  WRT_WORD: '12345678'
 
 jobs:
   build:
@@ -177,3 +180,23 @@ jobs:
           name: xwrt-firmware-${{ inputs.target || 'IPQ60XX' }}
           path: ${{ env.BUILD_DIR }}/bin/targets/**
           if-no-files-found: error
+
+      - name: Prepare release assets and notes
+        id: release
+        if: ${{ success() && inputs.test_only != true }}
+        env:
+          RELEASE_TARGET: ${{ inputs.target || 'IPQ60XX' }}
+        run: python3 Scripts/Package-Release.py
+
+      - name: Publish firmware release
+        if: ${{ success() && inputs.test_only != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_NAME: ${{ steps.release.outputs.name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_NAME" \
+            --notes-file release/release-notes.md
