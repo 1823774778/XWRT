@@ -1,0 +1,42 @@
+# XWRT IPQ60XX: JDCloud Arthur (RE-SS-01) and Athena (RE-CS-02)
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq60xx=y
+# CONFIG_TARGET_ALL_PROFILES is not set
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y
+CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_8devices_mango-dvk is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_alfa-network_ap120c-ax is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cambiumnetworks_xe3-4 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-ax1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-axt1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-07 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7350 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7500 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_mikrotik_chateau-5g-r17-ax is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_netgear_rbr350 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_netgear_rbs350 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_netgear_wax214 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_netgear_wax610 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_netgear_wax610y is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_qihoo_360v6 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_tplink_eap610-outdoor is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_tplink_eap623-outdoor-hd-v1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_tplink_eap625-outdoor-hd-v1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_tplink_eap620-hd-v2 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_tplink_eap620-hd-v3 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_wallys_dr6018s is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_yuncore_fap650 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_anysafe_e1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_dptech_ap3000-2c is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_philips_ly1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5-jdcloud is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_sy_y6010 is not set
+CONFIG_PACKAGE_wpad-openssl=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+# CONFIG_TARGET_ROOTFS_EXT4FS is not set
