@@ -32,10 +32,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: xwrt-${{ github.workflow }}-${{ github.ref }}-${{ inputs.target || 'IPQ60XX' }}
+  cancel-in-progress: true
+
 env:
   SOURCE_REPO: https://github.com/VIKINGYFY/immortalwrt.git
   SOURCE_BRANCH: owrt
   BUILD_DIR: wrt
+  CCACHE_MAXSIZE: 2G
 
 jobs:
   build:
@@ -52,11 +57,31 @@ jobs:
             device-tree-compiler file flex gawk gcc-multilib g++-multilib gettext \
             git libbpf-dev libclang-dev libdw-dev libelf-dev libncurses-dev libssl-dev \
             lld llvm ninja-build patch perl pkgconf python3 python3-dev \
-            python3-packaging python3-pyelftools python3-setuptools rsync swig \
+            python3-cryptography python3-packaging python3-pyelftools \
+            python3-setuptools qemu-utils rsync swig genisoimage jq \
             unzip wget xsltproc xz-utils zlib1g-dev zstd
 
+      - name: Set up bootstrap Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+
       - name: Clone ImmortalWrt source
-        run: git clone --depth=1 --single-branch --branch "$SOURCE_BRANCH" "$SOURCE_REPO" "$BUILD_DIR"
+        id: source
+        run: |
+          git clone --depth=1 --single-branch --branch "$SOURCE_BRANCH" "$SOURCE_REPO" "$BUILD_DIR"
+          printf 'commit=%s\n' "$(git -C "$BUILD_DIR" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler cache
+        if: ${{ inputs.test_only != true }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.BUILD_DIR }}/.ccache
+          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-${{ github.run_id }}
+          restore-keys: |
+            xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-
+            xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-
 
       - name: Update and install feeds
         working-directory: ${{ env.BUILD_DIR }}
@@ -83,7 +108,8 @@ jobs:
           if [ -n "${EXTRA_PACKAGES:-}" ]; then
             printf '%s\n' "$EXTRA_PACKAGES" >> .config
           fi
-          ../Scripts/Settings.sh
+          bash ../Scripts/Settings.sh
+          bash ../Scripts/Prepare.sh
           make defconfig
           if [ "$TARGET" = IPQ60XX ]; then
             expected=$(printf '%s\n' \
@@ -100,18 +126,53 @@ jobs:
         if: ${{ inputs.test_only == true }}
         run: cp "$BUILD_DIR/.config" "XWRT-${{ inputs.target || 'IPQ60XX' }}.config"
 
+      - name: Prepare Rust toolchain
+        if: ${{ inputs.test_only != true }}
+        working-directory: ${{ env.BUILD_DIR }}
+        run: bash ../Scripts/Prepare-Rust.sh
+
       - name: Download sources
         if: ${{ inputs.test_only != true }}
         run: make -C "$BUILD_DIR" download -j"$(nproc)" V=s
 
       - name: Compile firmware
         if: ${{ inputs.test_only != true }}
-        run: make -C "$BUILD_DIR" -j"$(nproc)" || make -C "$BUILD_DIR" -j1 V=s
+        run: |
+          mkdir -p build-reports
+          make -C "$BUILD_DIR" -j"$(nproc)" BUILD_TIME_LOG="$GITHUB_WORKSPACE/build-reports/parallel.tsv" || \
+            make -C "$BUILD_DIR" -j1 V=s BUILD_TIME_LOG="$GITHUB_WORKSPACE/build-reports/serial.tsv"
+
+      - name: Collect build reports
+        if: ${{ always() && !cancelled() }}
+        continue-on-error: true
+        working-directory: ${{ env.BUILD_DIR }}
+        run: bash ../Scripts/Collect-Reports.sh
+
+      - name: Upload build reports
+        if: ${{ always() && !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwrt-reports-${{ inputs.target || 'IPQ60XX' }}-${{ github.run_attempt }}
+          path: |
+            build-reports/
+            ${{ env.BUILD_DIR }}/logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Save compiler cache
+        if: ${{ success() && inputs.test_only != true }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.BUILD_DIR }}/.ccache
+          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-${{ github.run_id }}
 
       - name: Upload configuration
+        if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: xwrt-config-${{ inputs.target || 'IPQ60XX' }}
+          include-hidden-files: true
           path: |
             ${{ inputs.test_only == true && format('XWRT-{0}.config', inputs.target || 'IPQ60XX') || format('{0}/.config', env.BUILD_DIR) }}
 
@@ -121,3 +182,4 @@ jobs:
         with:
           name: xwrt-firmware-${{ inputs.target || 'IPQ60XX' }}
           path: ${{ env.BUILD_DIR }}/bin/targets/**
+          if-no-files-found: error
