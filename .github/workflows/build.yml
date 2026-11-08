@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: MIT
+# XWRT: reusable OpenWrt build workflow inspired by OpenWRT-CI.
+name: XWRT Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: OpenWrt target configuration
+        required: true
+        default: X86
+        type: choice
+        options:
+          - X86
+          - ROCKCHIP
+      package:
+        description: Additional package config lines, one per line
+        required: false
+        type: string
+      test_only:
+        description: Generate .config without compiling
+        required: false
+        default: false
+        type: boolean
+  push:
+    paths:
+      - '.github/workflows/build.yml'
+      - 'Config/**'
+      - 'Scripts/**'
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPO: https://github.com/VIKINGYFY/immortalwrt.git
+  SOURCE_BRANCH: owrt
+  BUILD_DIR: wrt
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout XWRT
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
+            git libncurses-dev libssl-dev llvm ninja-build patch perl \
+            python3 python3-dev python3-setuptools rsync unzip wget xsltproc \
+            zlib1g-dev
+
+      - name: Clone ImmortalWrt source
+        run: git clone --depth=1 --single-branch --branch "$SOURCE_BRANCH" "$SOURCE_REPO" "$BUILD_DIR"
+
+      - name: Prepare configuration
+        env:
+          TARGET: ${{ inputs.target || 'X86' }}
+          EXTRA_PACKAGES: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
+          cat "../Config/${TARGET}.txt" "../Config/GENERAL.txt" > .config
+          if [ -n "${EXTRA_PACKAGES:-}" ]; then
+            printf '%s\n' "$EXTRA_PACKAGES" >> .config
+          fi
+          ../Scripts/Settings.sh
+          make defconfig
+
+      - name: Generate configuration only
+        if: ${{ inputs.test_only == true }}
+        run: cp "$BUILD_DIR/.config" "XWRT-${{ inputs.target || 'X86' }}.config"
+
+      - name: Download sources
+        if: ${{ inputs.test_only != true }}
+        run: make -C "$BUILD_DIR" download -j"$(nproc)" V=s
+
+      - name: Compile firmware
+        if: ${{ inputs.test_only != true }}
+        run: make -C "$BUILD_DIR" -j"$(nproc)" || make -C "$BUILD_DIR" -j1 V=s
+
+      - name: Upload configuration
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwrt-config-${{ inputs.target || 'X86' }}
+          path: |
+            ${{ inputs.test_only == true && format('XWRT-{0}.config', inputs.target || 'X86') || format('{0}/.config', env.BUILD_DIR) }}
+
+      - name: Upload firmware
+        if: ${{ inputs.test_only != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xwrt-firmware-${{ inputs.target || 'X86' }}
+          path: ${{ env.BUILD_DIR }}/bin/targets/**
