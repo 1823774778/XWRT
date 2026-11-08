@@ -23,11 +23,6 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    paths:
-      - '.github/workflows/build.yml'
-      - 'Config/**'
-      - 'Scripts/**'
 
 permissions:
   contents: write
