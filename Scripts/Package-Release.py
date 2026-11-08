@@ -82,7 +82,8 @@ def main():
     assets = release_dir / "assets"
     assets.mkdir(parents=True, exist_ok=False)
     for artifact in firmware:
-        shutil.copy2(artifact, assets / artifact.name)
+        filename = f"{artifact.stem}-{timestamp:%Y-%m-%d}{artifact.suffix}"
+        shutil.copy2(artifact, assets / filename)
 
     repository = os.environ["GITHUB_REPOSITORY"]
     kernel = overview["linux_kernel"]["version"]
@@ -126,7 +127,7 @@ def main():
             notes.extend(["", "APK：默认允许未签名的第三方软件包，安装时仍需匹配架构及依赖。"])
     notes.extend([
         "",
-        "附件仅包含 `.bin` 固件。",
+        "附件仅包含 `.bin` 固件，文件名末尾为北京时间编译日期（YYYY-MM-DD）。",
         f"构建记录：https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
         "",
     ])
