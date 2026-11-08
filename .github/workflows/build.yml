@@ -195,7 +195,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_NAME: ${{ steps.release.outputs.name }}
         run: |
-          gh release create "$RELEASE_TAG" release/assets/* \
+          gh release create "$RELEASE_TAG" release/assets/*.bin \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$RELEASE_NAME" \
