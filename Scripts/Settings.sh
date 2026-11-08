@@ -72,3 +72,12 @@ EOF
 if [ "$WRT_THEME" = vantage ]; then
   printf '%s\n' 'CONFIG_PACKAGE_luci-app-vantage=y' >> .config
 fi
+
+# APK reads this configuration for both CLI and LuCI package operations.
+APK_CONFIG=files/etc/apk/config
+mkdir -p files/etc/apk files/lib/upgrade/keep.d
+touch "$APK_CONFIG"
+if ! grep -Fqx 'allow-untrusted' "$APK_CONFIG"; then
+  printf '\nallow-untrusted\n' >> "$APK_CONFIG"
+fi
+printf '%s\n' '/etc/apk/config' > files/lib/upgrade/keep.d/apk-config

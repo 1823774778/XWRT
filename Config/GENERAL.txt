@@ -1,13 +1,19 @@
 # XWRT common packages and kernel modules
 CONFIG_CCACHE=y
+CONFIG_PER_FEED_REPO=y
+# CONFIG_FEED_pon_drivers is not set
+# CONFIG_FEED_pon_userspace is not set
+# CONFIG_FEED_vantage is not set
+# CONFIG_FEED_video is not set
+# CONFIG_FEED_viking is not set
 CONFIG_TARGET_MULTI_PROFILE=y
 CONFIG_TARGET_PER_DEVICE_ROOTFS=y
 CONFIG_TARGET_ROOTFS_INITRAMFS=n
 # CONFIG_PACKAGE_luci-app-homeproxy is not set
 CONFIG_PACKAGE_luci-app-autoreboot=y
-CONFIG_PACKAGE_luci-app-samba4=y
+# CONFIG_PACKAGE_luci-app-samba4 is not set
 CONFIG_PACKAGE_luci-app-upnp=y
-CONFIG_PACKAGE_luci-app-wolultra=y
+# CONFIG_PACKAGE_luci-app-wolultra is not set
 CONFIG_PACKAGE_luci-app-attendedsysupgrade=n
 CONFIG_PACKAGE_luci-app-wol=n
 CONFIG_PACKAGE_kmod-fs-btrfs=y
