@@ -2,7 +2,7 @@
 # XWRT build-time defaults. This script is intentionally independent from OpenWRT-CI.
 set -euo pipefail
 
-: "${WRT_THEME:=argon}"
+: "${WRT_THEME:=vantage}"
 : "${WRT_NAME:=XWRT}"
 : "${WRT_SSID:=XWRT}"
 : "${WRT_WORD:=12345678}"
@@ -60,7 +60,7 @@ if [ -f "$FLASH_JS" ]; then
 fi
 
 touch .config
-sed -i '/^CONFIG_PACKAGE_luci=/d; /^CONFIG_LUCI_LANG_zh_Hans=/d; /^CONFIG_PACKAGE_luci-theme-'"$WRT_THEME"'=/d; /^CONFIG_IMAGEOPT=/d; /^# CONFIG_IMAGEOPT is not set$/d; /^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_DIST=/d' .config
+sed -i '/^CONFIG_PACKAGE_luci=/d; /^CONFIG_LUCI_LANG_zh_Hans=/d; /^CONFIG_PACKAGE_luci-theme-'"$WRT_THEME"'=/d; /^CONFIG_IMAGEOPT=/d; /^# CONFIG_IMAGEOPT is not set$/d; /^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_DIST=/d; /^CONFIG_PACKAGE_luci-app-vantage=/d' .config
 cat >> .config <<EOF
 CONFIG_PACKAGE_luci=y
 CONFIG_LUCI_LANG_zh_Hans=y
@@ -69,6 +69,9 @@ CONFIG_IMAGEOPT=y
 CONFIG_VERSIONOPT=y
 CONFIG_VERSION_DIST="$WRT_NAME"
 EOF
+if [ "$WRT_THEME" = vantage ]; then
+  printf '%s\n' 'CONFIG_PACKAGE_luci-app-vantage=y' >> .config
+fi
 
 # Keep the overview and release filenames tied to the same build timestamp.
 python3 - "$WRT_NAME" <<'PY'
