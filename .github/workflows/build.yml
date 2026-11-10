@@ -86,13 +86,13 @@ jobs:
         run: |
           cp feeds.conf.default feeds.conf
           printf '%s\n' \
-            'src-git vantage https://github.com/anothaDev/luci-theme-vantage.git;main' \
+            'src-git argon https://github.com/jerrykuku/luci-theme-argon.git;master' \
             'src-git viking https://github.com/VIKINGYFY/packages.git;main' >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a -p packages
           ./scripts/feeds install -a -p luci
           ./scripts/feeds install -a
-          ./scripts/feeds install -p vantage luci-theme-vantage
+          ./scripts/feeds install -p argon luci-theme-argon
 
       - name: Add XWRT OTA package
         if: ${{ inputs.target == 'IPQ60XX' }}
