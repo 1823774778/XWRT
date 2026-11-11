@@ -80,6 +80,148 @@ if new not in source:
 PY
 fi
 
+if grep -q '^CONFIG_TARGET_qualcommax_ipq60xx=y$' .config; then
+  RELAY_AP_SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/RouterToolRelayAP.uc"
+  RELAY_AP_TARGET=$ROUTER_TOOL_ROOT/usr/share/router-tool/relay_ap.uc
+  ROUTER_AUTO_UC=$ROUTER_TOOL_ROOT/usr/share/router-tool/auto.uc
+  ROUTER_TOOL_AUTO=$ROUTER_TOOL_ROOT/usr/libexec/router-tool-auto
+  ROUTER_TOOL_JS=package/emortal/luci-app-router-tool/htdocs/luci-static/resources/tools/router-tool.js
+  [ -f "$RELAY_AP_SOURCE" ] || { printf '%s\n' 'Missing Relay AP source' >&2; exit 1; }
+  [ -f "$ROUTER_AUTO_UC" ] || { printf '%s\n' 'Missing Router Tool auto.uc' >&2; exit 1; }
+  [ -f "$ROUTER_TOOL_AUTO" ] || { printf '%s\n' 'Missing Router Tool auto runner' >&2; exit 1; }
+  [ -f "$ROUTER_TOOL_JS" ] || { printf '%s\n' 'Missing Router Tool LuCI integration' >&2; exit 1; }
+  mkdir -p "$(dirname "$RELAY_AP_TARGET")"
+  cp "$RELAY_AP_SOURCE" "$RELAY_AP_TARGET"
+
+  python3 - "$WIFI_CONFIG" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+marker = "option auto_relay_ap '1'"
+if marker not in source:
+    anchor = "config settings 'main'\n"
+    if source.count(anchor) != 1:
+        raise SystemExit('Unsupported Router Tool settings config')
+    source = source.replace(anchor, anchor + "\t" + marker + "\n", 1)
+    path.write_text(source)
+PY
+
+  python3 - "$ROUTER_AUTO_UC" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+import_line = "import { read_snapshot, record_option, custom_option, tracked_option, lan_context, equal, finish_snapshot } from './snapshot.uc';\n"
+if "import * as relay_ap from './relay_ap.uc';" not in source:
+    if source.count(import_line) != 1:
+        raise SystemExit('Unsupported Router Tool auto.uc imports')
+    source = source.replace(import_line, import_line + "import * as relay_ap from './relay_ap.uc';\n", 1)
+signature = 'export function synchronize(uci, data, upstream4, target) {'
+new_signature = 'export function synchronize(uci, data, upstream4, target, board, before) {'
+if new_signature not in source:
+    if source.count(signature) != 1:
+        raise SystemExit('Unsupported Router Tool synchronize signature')
+    source = source.replace(signature, new_signature, 1)
+old = """\t\trecorder = null;
+\t\tset('router-tool', 'main', { auto_role: role });
+\t}
+\t// Await the first lease, then check the LAN subnet once for this mode.
+"""
+new = """\t\trecorder = null;
+\t\tset('router-tool', 'main', { auto_role: role });
+\t}
+\tif (previous != role)
+\t\tset('router-tool', 'main', { state: finish_snapshot(state) });
+\tlet relay_enabled = false;
+\tif (role == 'sub' && !ap && uci.get('network', 'wan', 'proto') == 'dhcp' &&
+\t\tuci.get('router-tool', 'main', 'auto_relay_ap') == '1' &&
+\t\tuci.get('router-tool', 'main', 'auto_relay_ap_disabled') != '1' &&
+\t\t!state?.manual_lan && length(upstream4 || []) && board && relay_ap.has_conflict(uci, upstream4)) {
+\t\tfor (let config in relay_ap.enable(uci, board, data))
+\t\t\tchanged[config] = true;
+\t\trelay_enabled = true;
+\t}
+\tif (relay_enabled)
+\t\treturn keys(changed);
+\t// Await the first lease, then check the LAN subnet once for this mode.
+"""
+if new not in source:
+    if source.count(old) != 1:
+        raise SystemExit('Unsupported Router Tool role transition anchor')
+    source = source.replace(old, new, 1)
+old_call = """\tif (role == 'sub' && !state.subnet_done && length(upstream4 || [])) {
+"""
+new_call = """\tif (!relay_enabled && role == 'sub' && !state.subnet_done && length(upstream4 || [])) {
+"""
+if new_call not in source:
+    if source.count(old_call) != 1:
+        raise SystemExit('Unsupported Router Tool subnet conflict anchor')
+    source = source.replace(old_call, new_call, 1)
+path.write_text(source)
+PY
+
+  python3 - "$ROUTER_TOOL_AUTO" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+old = "\tlet before = configuration(uci);\n\tlet changed = [];\n"
+new = """\tlet before = configuration(uci);
+\tlet changed = [];
+\tlet board = null;
+\ttry {
+\t\tlet board_text = readfile('/etc/board.json');
+\t\tif (board_text) board = json(board_text);
+\t}
+\tcatch (e) {
+\t\tlog_once(LOG_WARNING, 'relay-ap-board', 'Board capabilities unavailable; automatic Relay AP is deferred: ' + e.message);
+\t}
+"""
+if new not in source:
+    if source.count(old) != 1:
+        raise SystemExit('Unsupported Router Tool auto runner state anchor')
+    source = source.replace(old, new, 1)
+old_call = 'for (let config in synchronize(uci, data, upstream, target))'
+new_call = 'for (let config in synchronize(uci, data, upstream, target, board, before))'
+if new_call not in source:
+    if source.count(old_call) != 1:
+        raise SystemExit('Unsupported Router Tool auto runner synchronize call')
+    source = source.replace(old_call, new_call, 1)
+old_wireless_board = "\t\tlet board = null;\n\t\tlet text = readfile('/etc/board.json');"
+new_wireless_board = "\t\tlet text = readfile('/etc/board.json');"
+if old_wireless_board in source:
+    if source.count(old_wireless_board) != 1:
+        raise SystemExit('Unsupported Router Tool wireless board loader')
+    source = source.replace(old_wireless_board, new_wireless_board, 1)
+path.write_text(source)
+PY
+
+  python3 - "$ROUTER_TOOL_JS" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+old_enable = "\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
+new_enable = "\tuci.unset('router-tool', 'main', 'auto_relay_ap_disabled');\n\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
+if new_enable not in source:
+    if source.count(old_enable) != 1:
+        raise SystemExit('Unsupported Router Tool AP enable marker')
+    source = source.replace(old_enable, new_enable, 1)
+old_disable = "\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
+new_disable = "\tif (uci.get('router-tool', 'main', 'auto_relay_ap') == '1')\n\t\tuci.set('router-tool', 'main', 'auto_relay_ap_disabled', '1');\n\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
+if new_disable not in source:
+    if source.count(old_disable) != 1:
+        raise SystemExit('Unsupported Router Tool AP disable marker')
+    source = source.replace(old_disable, new_disable, 1)
+path.write_text(source)
+PY
+fi
+
 # The stock CN database only exposes 5.2G and 5.8G and disables DFS channels,
 # so a phone cannot discover a 5G AP left on a DFS channel by auto selection.
 WIFI_UC=package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc
