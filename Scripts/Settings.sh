@@ -54,6 +54,42 @@ if [ -f "$WIFI_CONFIG" ]; then
   sed -i "s|option ssid '.*'|option ssid '$ssid_sed'|; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
 fi
 
+# The stock CN database only exposes 5.2G and 5.8G and disables DFS channels,
+# so a phone cannot discover a 5G AP left on a DFS channel by auto selection.
+WIFI_UC=package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc
+if [ -f "$WIFI_UC" ]; then
+  python3 - "$WIFI_UC" <<'PY'
+from pathlib import Path
+import sys
+
+uc = Path(sys.argv[1])
+source = uc.read_text()
+old = "set ${s}.country='${country || 'CN'}'"
+new = "set ${s}.country='CN'"
+if new not in source:
+    if old not in source:
+        raise SystemExit('Unsupported wifi-scripts country default')
+    uc.write_text(source.replace(old, new, 1))
+PY
+fi
+
+# Upgrades keep their old wireless config, so fix the 5G country at boot too.
+WIFI_DEFAULTS=files/etc/uci-defaults/98-xwrt-wifi
+mkdir -p files/etc/uci-defaults
+cat > "$WIFI_DEFAULTS" <<'EOF'
+#!/bin/sh
+[ -f /etc/config/wireless ] || exit 0
+changed=
+for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
+  [ "$(uci -q get "wireless.$radio.band")" = "5g" ] || continue
+  [ "$(uci -q get "wireless.$radio.country")" = "CN" ] && continue
+  uci -q set "wireless.$radio.country=CN" && changed=1
+done
+[ -z "$changed" ] || uci -q commit wireless
+exit 0
+EOF
+chmod 0755 "$WIFI_DEFAULTS"
+
 FLASH_JS=feeds/luci/modules/luci-mod-system/htdocs/luci-static/resources/view/system/flash.js
 if [ -f "$FLASH_JS" ]; then
   sed -i "/awaitReconnect(/ { s/'192\\.168\\.1\\.1'/'$WRT_IP'/g; s/'immortalwrt\\.lan'/'${WRT_NAME,,}.lan'/g; }" "$FLASH_JS"
