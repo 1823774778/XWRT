@@ -71,6 +71,16 @@ jobs:
           git clone --depth=1 --single-branch --branch "$SOURCE_BRANCH" "$SOURCE_REPO" "$BUILD_DIR"
           printf 'commit=%s\n' "$(git -C "$BUILD_DIR" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Allow regenerated firewall4 source archive
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          # sources.openwrt.org has no archive for the pinned firewall4 commit, so
+          # download.pl regenerates it locally and the pinned mirror hash can never
+          # match. Keep the pinned commit and skip only that tarball hash.
+          sed -i 's|^PKG_MIRROR_HASH:=.*|PKG_MIRROR_HASH:=skip|' \
+            package/network/config/firewall4/Makefile
+          grep -qx 'PKG_MIRROR_HASH:=skip' package/network/config/firewall4/Makefile
+
       - name: Restore compiler cache
         if: ${{ inputs.test_only != true }}
         uses: actions/cache/restore@v4
