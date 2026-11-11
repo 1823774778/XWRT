@@ -45,13 +45,39 @@ if [ -f "$CFG_FILE" ]; then
   sed -i "s/192\\.168\\.[0-9]*\\.[0-9]*/$WRT_IP/g; s/hostname='.*'/hostname='$WRT_NAME'/g" "$CFG_FILE"
 fi
 
-WIFI_CONFIG=package/emortal/luci-app-router-tool/root/etc/config/router-tool
+ROUTER_TOOL_ROOT=package/emortal/luci-app-router-tool/root
+WIFI_CONFIG=$ROUTER_TOOL_ROOT/etc/config/router-tool
 if [ -f "$WIFI_CONFIG" ]; then
   ssid_sed=${WRT_SSID//&/\\&}
   ssid_sed=${ssid_sed//|/\\|}
   word_sed=${WRT_WORD//&/\\&}
   word_sed=${word_sed//|/\\|}
   sed -i "s|option ssid '.*'|option ssid '$ssid_sed'|; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
+
+  python3 - "$ROUTER_TOOL_ROOT/usr/share/router-tool/wireless.uc" <<'PY'
+from pathlib import Path
+import sys
+
+wireless = Path(sys.argv[1])
+source = wireless.read_text()
+old = "\t\tlet mode = htmode(caps, width);\n"
+new = r"""		if (band == '5G') {
+			let model = board?.model?.id;
+			if (model == 'jdcloud,re-ss-01')
+				suffix = '5.8G';
+			else if (model == 'jdcloud,re-cs-02') {
+				// Athena's PCIe radio is 5.2 GHz; its integrated 5 GHz radio is 5.8 GHz.
+				let path = radio.path || array(board.wlan[radio.phy]?.path)[0];
+				if (path)
+					suffix = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//) ? '5.2G' : '5.8G';
+			}
+		}
+""" + old
+if new not in source:
+    if source.count(old) != 1:
+        raise SystemExit('Unsupported Router Tool wireless naming logic')
+    wireless.write_text(source.replace(old, new, 1))
+PY
 fi
 
 # The stock CN database only exposes 5.2G and 5.8G and disables DFS channels,
