@@ -71,6 +71,22 @@ jobs:
           git clone --depth=1 --single-branch --branch "$SOURCE_BRANCH" "$SOURCE_REPO" "$BUILD_DIR"
           printf 'commit=%s\n' "$(git -C "$BUILD_DIR" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Drop unreachable package mirrors
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          # Runner egress cannot reach the bundled Chinese mirrors, so download.pl
+          # must fall back to the upstream sources instead of timing out.
+          mirrors=scripts/projectsmirrors.json
+          if [ -f "$mirrors" ]; then
+            cp "$mirrors" "$mirrors.orig"
+            sed -i '/\.cn\//d; /tencent/d; /aliyun/d' "$mirrors"
+            if python3 -c "import json; json.load(open('$mirrors'))"; then
+              rm "$mirrors.orig"
+            else
+              mv "$mirrors.orig" "$mirrors"
+            fi
+          fi
+
       - name: Allow regenerated firewall4 source archive
         working-directory: ${{ env.BUILD_DIR }}
         run: |
@@ -82,11 +98,12 @@ jobs:
           grep -qx 'PKG_MIRROR_HASH:=skip' package/network/config/firewall4/Makefile
 
       - name: Restore compiler cache
+        id: cache-restore
         if: ${{ inputs.test_only != true }}
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.BUILD_DIR }}/.ccache
-          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-${{ github.run_id }}
+          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}
           restore-keys: |
             xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-
             xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-
@@ -148,7 +165,9 @@ jobs:
 
       - name: Download sources
         if: ${{ inputs.test_only != true }}
-        run: make -C "$BUILD_DIR" download -j"$(nproc)" V=s
+        run: |
+          make -C "$BUILD_DIR" download -j"$(nproc)" || \
+            make -C "$BUILD_DIR" download -j1 V=s
 
       - name: Compile firmware
         if: ${{ inputs.test_only != true }}
@@ -176,11 +195,11 @@ jobs:
           retention-days: 7
 
       - name: Save compiler cache
-        if: ${{ success() && inputs.test_only != true }}
+        if: ${{ success() && inputs.test_only != true && steps.cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ env.BUILD_DIR }}/.ccache
-          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}-${{ github.run_id }}
+          key: xwrt-${{ runner.os }}-${{ inputs.target || 'IPQ60XX' }}-${{ steps.source.outputs.commit }}
 
       - name: Upload configuration
         if: ${{ always() && !cancelled() }}
