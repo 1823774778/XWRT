@@ -136,10 +136,12 @@ new = """\t\trecorder = null;
 \tif (previous != role)
 \t\tset('router-tool', 'main', { state: finish_snapshot(state) });
 \tlet relay_enabled = false;
-\tif (role == 'sub' && !ap && uci.get('network', 'wan', 'proto') == 'dhcp' &&
-\t\tuci.get('router-tool', 'main', 'auto_relay_ap') == '1' &&
+\tif (role == 'sub' && !ap && uci.get('network', 'wan', 'proto') != 'pppoe' &&
+\t\tuci.get('router-tool', 'main', 'auto_relay_ap') != '0' &&
 \t\tuci.get('router-tool', 'main', 'auto_relay_ap_disabled') != '1' &&
-\t\t!state?.manual_lan && length(upstream4 || []) && board && relay_ap.has_conflict(uci, upstream4)) {
+\t\tstate && !state.manual_lan && length(upstream4 || []) && board && relay_ap.has_conflict(uci, upstream4)) {
+\t\tstate.subnet_done = true;
+\t\tset('router-tool', 'main', { state: finish_snapshot(state) });
 \t\tfor (let config in relay_ap.enable(uci, board, data))
 \t\t\tchanged[config] = true;
 \t\trelay_enabled = true;
@@ -191,6 +193,12 @@ if new_call not in source:
     if source.count(old_call) != 1:
         raise SystemExit('Unsupported Router Tool auto runner synchronize call')
     source = source.replace(old_call, new_call, 1)
+old_after_sync = "\tfor (let config in synchronize(uci, data, upstream, target, board, before))\n\t\tif (index(changed, config) < 0) push(changed, config);\n"
+new_after_sync = old_after_sync + "\tap = uci.get('router-tool', 'main', 'ap_mode') == '1';\n"
+if new_after_sync not in source:
+    if source.count(old_after_sync) != 1:
+        raise SystemExit('Unsupported Router Tool auto runner post-sync state')
+    source = source.replace(old_after_sync, new_after_sync, 1)
 old_wireless_board = "\t\tlet board = null;\n\t\tlet text = readfile('/etc/board.json');"
 new_wireless_board = "\t\tlet text = readfile('/etc/board.json');"
 if old_wireless_board in source:
@@ -213,7 +221,7 @@ if new_enable not in source:
         raise SystemExit('Unsupported Router Tool AP enable marker')
     source = source.replace(old_enable, new_enable, 1)
 old_disable = "\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
-new_disable = "\tif (uci.get('router-tool', 'main', 'auto_relay_ap') == '1')\n\t\tuci.set('router-tool', 'main', 'auto_relay_ap_disabled', '1');\n\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
+new_disable = "\tif (uci.get('router-tool', 'main', 'auto_relay_ap') != '0')\n\t\tuci.set('router-tool', 'main', 'auto_relay_ap_disabled', '1');\n\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
 if new_disable not in source:
     if source.count(old_disable) != 1:
         raise SystemExit('Unsupported Router Tool AP disable marker')
