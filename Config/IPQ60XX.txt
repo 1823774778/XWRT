@@ -37,7 +37,6 @@ CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_philips_ly1800 is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5-jdcloud is not set
 # CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_sy_y6010 is not set
-CONFIG_PACKAGE_wpad-openssl=y
 CONFIG_PACKAGE_luci-app-xwrt-ota=y
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 # CONFIG_TARGET_ROOTFS_EXT4FS is not set
