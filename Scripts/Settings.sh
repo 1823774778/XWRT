@@ -347,11 +347,18 @@ if new not in source:
 PY
 fi
 
-# APK reads this configuration for both CLI and LuCI package operations.
+# APK reads these files for both CLI and LuCI package operations.
 APK_CONFIG=files/etc/apk/config
-mkdir -p files/etc/apk files/lib/upgrade/keep.d
+APK_CUSTOM_FEEDS=files/etc/apk/repositories.d/customfeeds.list
+mkdir -p files/etc/apk/repositories.d files/lib/upgrade/keep.d
 touch "$APK_CONFIG"
 if ! grep -Fqx 'allow-untrusted' "$APK_CONFIG"; then
   printf '\nallow-untrusted\n' >> "$APK_CONFIG"
 fi
-printf '%s\n' '/etc/apk/config' > files/lib/upgrade/keep.d/apk-config
+if [ ! -f "$APK_CUSTOM_FEEDS" ]; then
+  cat > "$APK_CUSTOM_FEEDS" <<'EOF'
+# Add trusted custom APK repositories here.
+# Official target and feed repositories are generated in distfeeds.list.
+EOF
+fi
+printf '%s\n' '/etc/apk/config' '/etc/apk/repositories.d/customfeeds.list' > files/lib/upgrade/keep.d/apk-config
