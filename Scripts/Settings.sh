@@ -73,6 +73,26 @@ if [ "$WRT_THEME" = vantage ]; then
   printf '%s\n' 'CONFIG_PACKAGE_luci-app-vantage=y' >> .config
 fi
 
+# A kept configuration can still select a theme this image no longer ships,
+# which leaves LuCI failing over to a template runtime that is not installed.
+THEME_DEFAULTS=files/etc/uci-defaults/99-xwrt-theme
+mkdir -p files/etc/uci-defaults
+cat > "$THEME_DEFAULTS" <<EOF
+#!/bin/sh
+for key in \$(uci -q show luci.themes 2>/dev/null | sed -n 's/^luci\.themes\.\([^.=]*\)=.*/\1/p'); do
+  value="\$(uci -q get "luci.themes.\$key")"
+  [ -d "/www/luci-static/\${value##*/}" ] || uci -q delete "luci.themes.\$key"
+done
+base="\$(uci -q get luci.main.mediaurlbase)"
+if [ -z "\$base" ] || [ ! -d "/www/luci-static/\${base##*/}" ]; then
+  uci -q set luci.themes.${WRT_THEME^}=/luci-static/$WRT_THEME
+  uci -q set luci.main.mediaurlbase=/luci-static/$WRT_THEME
+fi
+uci -q commit luci
+exit 0
+EOF
+chmod 0755 "$THEME_DEFAULTS"
+
 # Keep the overview and release filenames tied to the same build timestamp.
 python3 - "$WRT_NAME" <<'PY'
 from datetime import datetime
