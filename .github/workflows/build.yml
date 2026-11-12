@@ -121,6 +121,12 @@ jobs:
           ./scripts/feeds install -a
           ./scripts/feeds install -p vantage luci-theme-vantage
 
+      - name: Add OpenAppFilter package
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          git clone --depth=1 --single-branch --branch master \
+            https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+
       - name: Add XWRT OTA package
         if: ${{ inputs.target == 'IPQ60XX' }}
         working-directory: ${{ env.BUILD_DIR }}
@@ -145,6 +151,7 @@ jobs:
           make defconfig
           grep -qx 'CONFIG_USE_APK=y' .config
           grep -qx 'CONFIG_PACKAGE_apk-openssl=y' .config
+          grep -qx 'CONFIG_PACKAGE_luci-app-oaf=y' .config
           test -f files/etc/apk/config
           test -f files/etc/apk/repositories.d/customfeeds.list
           grep -Fqx 'allow-untrusted' files/etc/apk/config
