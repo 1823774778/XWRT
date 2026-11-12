@@ -4,7 +4,6 @@ set -euo pipefail
 
 : "${WRT_THEME:=vantage}"
 : "${WRT_NAME:=XWRT}"
-: "${WRT_SSID:=XWRT}"
 : "${WRT_WORD:=12345678}"
 : "${WRT_IP:=192.168.10.1}"
 
@@ -24,12 +23,10 @@ for octet in "${ip_octets[@]}"; do
     exit 1
   fi
 done
-for value in "$WRT_SSID" "$WRT_WORD"; do
-  if [[ "$value" =~ [[:cntrl:]] || "$value" == *"'"* || "$value" == *"\\"* ]]; then
-    printf '%s\n' 'Wi-Fi defaults cannot contain control characters, single quotes or backslashes' >&2
-    exit 1
-  fi
-done
+if [[ "$WRT_WORD" == *"'"* || "$WRT_WORD" == *"\\"* ]]; then
+  printf '%s\n' 'WRT_WORD cannot contain single quotes or backslashes' >&2
+  exit 1
+fi
 if [[ ${#WRT_WORD} -lt 8 || ${#WRT_WORD} -gt 63 || "$WRT_WORD" == *[!\ -\~]* ]]; then
   printf '%s\n' 'WRT_WORD must contain 8 to 63 printable ASCII characters' >&2
   exit 1
@@ -48,13 +45,11 @@ fi
 ROUTER_TOOL_ROOT=package/emortal/luci-app-router-tool/root
 WIFI_CONFIG=$ROUTER_TOOL_ROOT/etc/config/router-tool
 if [ -f "$WIFI_CONFIG" ]; then
-  ssid_sed=${WRT_SSID//&/\\&}
-  ssid_sed=${ssid_sed//|/\\|}
   word_sed=${WRT_WORD//&/\\&}
   word_sed=${word_sed//|/\\|}
-  sed -i "s|option ssid '.*'|option ssid '$ssid_sed'|; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
+  sed -i "/^[[:space:]]*option ssid /d; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
 
-  python3 - "$ROUTER_TOOL_ROOT/usr/share/router-tool/wireless.uc" <<'PY'
+  python3 - "$ROUTER_TOOL_ROOT/usr/share/router-tool/wireless.uc" "$ROUTER_TOOL_ROOT/etc/init.d/router-tool" <<'PY'
 from pathlib import Path
 import sys
 
@@ -73,10 +68,89 @@ new = r"""		if (band == '5G') {
 			}
 		}
 """ + old
+patches = [
+    (old, new),
+    (r"""function default_ssid(uci, board, suffix, custom_ssid) {
+	let hostname = custom_ssid || uci.get_first('system', 'system', 'hostname') || 'OWRT';
+	let tail = suffix;
+	if (!custom_ssid) {
+		let vendor = split(board?.model?.id, ',')?.[0] || 'unknown';
+		vendor = uc(substr(vendor, 0, 1)) + substr(vendor, 1);
+		// Keep the vendor and band visible within the 32-byte SSID limit.
+		tail = substr(vendor, 0, 32 - length(suffix) - 3) + '-' + suffix;
+	}
+	let size = min(length(hostname), 31 - length(tail));
+	// Ucode string offsets count bytes. Avoid cutting a UTF-8 code point.
+	while (size > 0 && (ord(hostname, size) & 0xc0) == 0x80) size--;
+	return substr(hostname, 0, size) + '-' + tail;
+}""", r"""function default_ssid(uci, suffix) {
+	let hostname = uci.get_first('system', 'system', 'hostname') || 'OWRT';
+	let size = min(length(hostname), 31 - length(suffix));
+	// Ucode string offsets count bytes. Avoid cutting a UTF-8 code point.
+	while (size > 0 && size < length(hostname) && (ord(hostname, size) & 0xc0) == 0x80) size--;
+	return substr(hostname, 0, size) + '-' + suffix;
+}"""),
+    ('let defaults_loaded = false, custom_ssid, custom_key;',
+     'let defaults_loaded = false, custom_key;'),
+    (r"""		custom_ssid = defaults?.ssid;
+		custom_key = defaults?.key;
+		let use_custom = type(custom_ssid) == 'string' && type(custom_key) == 'string' &&
+			length(custom_ssid) && length(custom_key);
+		if (use_custom && (length(custom_ssid) > 32 || match(custom_ssid, /[[:cntrl:]]/)))
+			die('Wireless SSID must contain 1 to 32 bytes without control characters');
+		if (use_custom && (length(custom_key) < 8 || length(custom_key) > 63 || match(custom_key, /[^ -~]/)))
+			die('Wireless password must contain 8 to 63 printable ASCII characters');
+		if (!use_custom) {
+			custom_ssid = null;
+			custom_key = '12345678';
+		}""", r"""		custom_key = defaults?.key || '12345678';
+		if (type(custom_key) != 'string' || length(custom_key) < 8 || length(custom_key) > 63 || match(custom_key, /[^ -~]/))
+			die('Wireless password must contain 8 to 63 printable ASCII characters');"""),
+    (r"""	for (let radio in radios) {
+		if (uci.get('router-tool', radio['.name'], 'defaults_done') == '1') continue;
+		let attached = filter(interfaces, iface => index(array(iface.device), radio['.name']) >= 0);
+		// Decide once as soon as a radio has interfaces. Custom SSIDs and
+		// station/mesh/WDS backhauls are explicit user configuration.
+		if (!length(attached)) continue;
+		if (length(filter(attached, iface => iface.mode != 'ap' || iface.wds == '1' || length(array(iface.device)) != 1 || iface.mlo == '1'))) {""", r"""	function plain_ap(iface) {
+		return iface.mode == 'ap' && iface.wds != '1' && length(array(iface.device)) == 1 && iface.mlo != '1';
+	}
+	// Only rename interfaces whose current SSID is still the one we wrote.
+	for (let ap in interfaces) {
+		let saved = ap.xwrt_managed_ssid;
+		if (!plain_ap(ap) || !saved || ap.ssid != saved) continue;
+		let suffix = match(saved, /-([^-]+)$/)?.[1];
+		if (!suffix) continue;
+		let ssid = default_ssid(uci, suffix);
+		set('wireless', ap['.name'], { ssid, xwrt_managed_ssid: ssid });
+	}
+	for (let radio in radios) {
+		if (uci.get('router-tool', radio['.name'], 'defaults_done') == '1') continue;
+		let attached = filter(interfaces, iface => index(array(iface.device), radio['.name']) >= 0);
+		// Decide once as soon as a radio has interfaces. Custom SSIDs and
+		// station/mesh/WDS backhauls are explicit user configuration.
+		if (!length(attached)) continue;
+		if (length(filter(attached, iface => !plain_ap(iface)))) {"""),
+    (r"""		for (let ap in aps)
+			set('wireless', ap['.name'], { ssid: default_ssid(uci, board, suffix, custom_ssid), key: custom_key, encryption: band == '6G' ? 'sae+ccmp' : 'psk2+ccmp', ieee80211w: band == '6G' ? '2' : null });""", r"""		let ssid = default_ssid(uci, suffix);
+		for (let ap in aps)
+			set('wireless', ap['.name'], { ssid, xwrt_managed_ssid: ssid, key: custom_key, encryption: band == '6G' ? 'sae+ccmp' : 'psk2+ccmp', ieee80211w: band == '6G' ? '2' : null });"""),
+]
+for old, new in patches:
+    if new not in source:
+        if source.count(old) != 1:
+            raise SystemExit('Unsupported Router Tool wireless naming logic')
+        source = source.replace(old, new, 1)
+wireless.write_text(source)
+
+service = Path(sys.argv[2])
+source = service.read_text()
+old = '\tprocd_add_reload_trigger router-tool\n'
+new = old + '\tprocd_add_reload_trigger system\n'
 if new not in source:
     if source.count(old) != 1:
-        raise SystemExit('Unsupported Router Tool wireless naming logic')
-    wireless.write_text(source.replace(old, new, 1))
+        raise SystemExit('Unsupported Router Tool service triggers')
+    service.write_text(source.replace(old, new, 1))
 PY
 fi
 
@@ -120,7 +194,7 @@ if "import * as relay_ap from './relay_ap.uc';" not in source:
         raise SystemExit('Unsupported Router Tool auto.uc imports')
     source = source.replace(import_line, import_line + "import * as relay_ap from './relay_ap.uc';\n", 1)
 signature = 'export function synchronize(uci, data, upstream4, target) {'
-new_signature = 'export function synchronize(uci, data, upstream4, target, board, before) {'
+new_signature = 'export function synchronize(uci, data, upstream4, target, board, wireless_pending) {'
 if new_signature not in source:
     if source.count(signature) != 1:
         raise SystemExit('Unsupported Router Tool synchronize signature')
@@ -133,35 +207,25 @@ old = """\t\trecorder = null;
 new = """\t\trecorder = null;
 \t\tset('router-tool', 'main', { auto_role: role });
 \t}
-\tif (previous != role)
-\t\tset('router-tool', 'main', { state: finish_snapshot(state) });
-\tlet relay_enabled = false;
-\tif (role == 'sub' && !ap && uci.get('network', 'wan', 'proto') != 'pppoe' &&
-\t\tuci.get('router-tool', 'main', 'auto_relay_ap') != '0' &&
-\t\tuci.get('router-tool', 'main', 'auto_relay_ap_disabled') != '1' &&
-\t\tstate && !state.manual_lan && length(upstream4 || []) && board && relay_ap.has_conflict(uci, upstream4)) {
-\t\tstate.subnet_done = true;
-\t\tset('router-tool', 'main', { state: finish_snapshot(state) });
-\t\tfor (let config in relay_ap.enable(uci, board, data))
-\t\t\tchanged[config] = true;
-\t\trelay_enabled = true;
-\t}
-\tif (relay_enabled)
+\tif (role == 'sub' && uci.get('router-tool', 'main', 'auto_relay_ap') != '0' &&
+\t\tuci.get('router-tool', 'main', 'auto_relay_ap_disabled') != '1' && relay_ap.has_conflict(uci, upstream4)) {
+\t\tlet ready = length(keys(board?.network || {})) && !wireless_pending;
+\t\t// Save the routed LAN before bridging, including manually configured addresses.
+\t\tif (ready) state.subnet_done = true;
+\t\tif (ready || previous != role)
+\t\t\tset('router-tool', 'main', { state: finish_snapshot(uci, state) });
+\t\tif (ready)
+\t\t\tfor (let config in relay_ap.enable(uci, board, data))
+\t\t\t\tchanged[config] = true;
+\t\t// Do not move the LAN to a different subnet while AP conversion is deferred.
 \t\treturn keys(changed);
+\t}
 \t// Await the first lease, then check the LAN subnet once for this mode.
 """
 if new not in source:
     if source.count(old) != 1:
         raise SystemExit('Unsupported Router Tool role transition anchor')
     source = source.replace(old, new, 1)
-old_call = """\tif (role == 'sub' && !state.subnet_done && length(upstream4 || [])) {
-"""
-new_call = """\tif (!relay_enabled && role == 'sub' && !state.subnet_done && length(upstream4 || [])) {
-"""
-if new_call not in source:
-    if source.count(old_call) != 1:
-        raise SystemExit('Unsupported Router Tool subnet conflict anchor')
-    source = source.replace(old_call, new_call, 1)
 path.write_text(source)
 PY
 
@@ -171,41 +235,38 @@ import sys
 
 path = Path(sys.argv[1])
 source = path.read_text()
-old = "\tlet before = configuration(uci);\n\tlet changed = [];\n"
-new = """\tlet before = configuration(uci);
-\tlet changed = [];
-\tlet board = null;
+board_loader = """\t\tlet board = null;
+\t\tlet text = readfile('/etc/board.json');
+\t\ttry {
+\t\t\tif (text) board = json(text);
+\t\t\tunlink('/var/run/router-tool-log-wireless-board');
+\t\t}
+\t\tcatch (e) {
+\t\t\tlog_once(LOG_WARNING, 'wireless-board', 'Wireless board capabilities are invalid; defaults deferred: ' + e.message);
+\t\t}
+"""
+old = """\tfor (let config in synchronize(uci, data, upstream, target))
+\t\tif (index(changed, config) < 0) push(changed, config);
+"""
+new = """\tlet board = null;
 \ttry {
-\t\tlet board_text = readfile('/etc/board.json');
-\t\tif (board_text) board = json(board_text);
+\t\tlet text = readfile('/etc/board.json');
+\t\tif (text) board = json(text);
+\t\tunlink('/var/run/router-tool-log-wireless-board');
 \t}
 \tcatch (e) {
-\t\tlog_once(LOG_WARNING, 'relay-ap-board', 'Board capabilities unavailable; automatic Relay AP is deferred: ' + e.message);
+\t\tlog_once(LOG_WARNING, 'wireless-board', 'Board data is invalid; Relay AP and wireless defaults are deferred: ' + e.message);
 \t}
+\tlet wireless_pending = stat('/tmp/.uci/wireless')?.size;
+\tfor (let config in synchronize(uci, data, upstream, target, board, wireless_pending))
+\t\tif (index(changed, config) < 0) push(changed, config);
+\tap = uci.get('router-tool', 'main', 'ap_mode') == '1';
 """
 if new not in source:
-    if source.count(old) != 1:
-        raise SystemExit('Unsupported Router Tool auto runner state anchor')
-    source = source.replace(old, new, 1)
-old_call = 'for (let config in synchronize(uci, data, upstream, target))'
-new_call = 'for (let config in synchronize(uci, data, upstream, target, board, before))'
-if new_call not in source:
-    if source.count(old_call) != 1:
-        raise SystemExit('Unsupported Router Tool auto runner synchronize call')
-    source = source.replace(old_call, new_call, 1)
-old_after_sync = "\tfor (let config in synchronize(uci, data, upstream, target, board, before))\n\t\tif (index(changed, config) < 0) push(changed, config);\n"
-new_after_sync = old_after_sync + "\tap = uci.get('router-tool', 'main', 'ap_mode') == '1';\n"
-if new_after_sync not in source:
-    if source.count(old_after_sync) != 1:
-        raise SystemExit('Unsupported Router Tool auto runner post-sync state')
-    source = source.replace(old_after_sync, new_after_sync, 1)
-old_wireless_board = "\t\tlet board = null;\n\t\tlet text = readfile('/etc/board.json');"
-new_wireless_board = "\t\tlet text = readfile('/etc/board.json');"
-if old_wireless_board in source:
-    if source.count(old_wireless_board) != 1:
-        raise SystemExit('Unsupported Router Tool wireless board loader')
-    source = source.replace(old_wireless_board, new_wireless_board, 1)
-path.write_text(source)
+    if source.count(old) != 1 or source.count(board_loader) != 1:
+        raise SystemExit('Unsupported Router Tool auto runner synchronization')
+    source = source.replace(board_loader, '', 1).replace(old, new, 1)
+    path.write_text(source)
 PY
 
   python3 - "$ROUTER_TOOL_JS" <<'PY'

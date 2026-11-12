@@ -37,7 +37,6 @@ env:
   BUILD_DIR: wrt
   CCACHE_MAXSIZE: 2G
   WRT_IP: 192.168.10.1
-  WRT_SSID: XWRT
   WRT_WORD: '12345678'
 
 jobs:
