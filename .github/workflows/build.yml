@@ -167,11 +167,10 @@ jobs:
             test -f package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
             grep -q 'relay_ap.enable' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
             grep -q 'auto_relay_ap_disabled' package/emortal/luci-app-router-tool/htdocs/luci-static/resources/tools/router-tool.js
-            grep -Fq "country: band == '6G' ? '00' : 'CN'" package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
-            grep -Fq 'never let auto selection pick a DFS channel' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
-            grep -Fq 'width = min(width, 80)' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
-            grep -Fq 'channels 100-144' package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc
-            grep -Fq "wireless.\$radio.channel=149" files/etc/uci-defaults/98-xwrt-wifi
+            grep -q "option ssid 'XWRT'" package/emortal/luci-app-router-tool/root/etc/config/router-tool
+            if grep -q 'xwrt_managed_ssid' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc; then exit 1; fi
+            if test -e files/etc/uci-defaults/98-xwrt-wifi; then exit 1; fi
+            if grep -q "country='CN'" package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc; then exit 1; fi
           fi
 
       - name: Generate configuration only
