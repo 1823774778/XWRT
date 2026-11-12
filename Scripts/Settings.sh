@@ -47,9 +47,9 @@ WIFI_CONFIG=$ROUTER_TOOL_ROOT/etc/config/router-tool
 if [ -f "$WIFI_CONFIG" ]; then
   word_sed=${WRT_WORD//&/\\&}
   word_sed=${word_sed//|/\\|}
-  sed -i "/^[[:space:]]*option ssid /d; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
+  sed -i "s|option ssid '.*'|option ssid 'XWRT'|; s|option key '.*'|option key '$word_sed'|" "$WIFI_CONFIG"
 
-  python3 - "$ROUTER_TOOL_ROOT/usr/share/router-tool/wireless.uc" "$ROUTER_TOOL_ROOT/etc/init.d/router-tool" <<'PY'
+  python3 - "$ROUTER_TOOL_ROOT/usr/share/router-tool/wireless.uc" <<'PY'
 from pathlib import Path
 import sys
 
@@ -59,12 +59,12 @@ old = "\t\tlet mode = htmode(caps, width);\n"
 new = r"""		if (band == '5G') {
 			let model = board?.model?.id;
 			if (model == 'jdcloud,re-ss-01')
-				suffix = '5.8G';
+				suffix = '5G';
 			else if (model == 'jdcloud,re-cs-02') {
 				// Athena's PCIe radio is 5.2 GHz; its integrated 5 GHz radio is 5.8 GHz.
 				let path = radio.path || array(board.wlan[radio.phy]?.path)[0];
 				if (path)
-					suffix = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//) ? '5.2G' : '5.8G';
+					suffix = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//) ? '5.2G' : '5G';
 			}
 		}
 """ + old
@@ -90,8 +90,8 @@ patches = [
 	return substr(hostname, 0, size) + '-' + suffix;
 }
 
-function default_ssid(uci, suffix) {
-	return format_ssid(uci.get_first('system', 'system', 'hostname') || 'OWRT', suffix);
+function default_ssid(suffix) {
+	return 'XWRT-' + (suffix == '5.8G' ? '5G' : suffix);
 }"""),
     ('let defaults_loaded = false, custom_ssid, custom_key;',
      'let defaults_loaded = false, custom_key;'),
@@ -122,7 +122,7 @@ function default_ssid(uci, suffix) {
 	for (let ap in interfaces) {
 		if (!plain_ap(ap)) continue;
 		let saved = ap.xwrt_managed_ssid;
-		let suffix = match(ap.ssid || '', /-(2\.4G|5\.2G|5\.8G|6G)$/)?.[1];
+		let suffix = match(ap.ssid || '', /-(2\.4G|5\.2G|5\.8G|5G|6G)$/)?.[1];
 		if (!suffix) continue;
 		if (!saved) {
 			let prefix = uci.get('router-tool', 'defaults', 'ssid');
@@ -131,7 +131,7 @@ function default_ssid(uci, suffix) {
 			saved = ap.ssid;
 		}
 		if (ap.ssid != saved) continue;
-		let ssid = default_ssid(uci, suffix);
+		let ssid = default_ssid(suffix);
 		set('wireless', ap['.name'], { ssid, xwrt_managed_ssid: ssid });
 	}
 	for (let radio in radios) {
@@ -142,7 +142,7 @@ function default_ssid(uci, suffix) {
 		if (!length(attached)) continue;
 		if (length(filter(attached, iface => !plain_ap(iface)))) {"""),
     (r"""		for (let ap in aps)
-			set('wireless', ap['.name'], { ssid: default_ssid(uci, board, suffix, custom_ssid), key: custom_key, encryption: band == '6G' ? 'sae+ccmp' : 'psk2+ccmp', ieee80211w: band == '6G' ? '2' : null });""", r"""		let ssid = default_ssid(uci, suffix);
+			set('wireless', ap['.name'], { ssid: default_ssid(uci, board, suffix, custom_ssid), key: custom_key, encryption: band == '6G' ? 'sae+ccmp' : 'psk2+ccmp', ieee80211w: band == '6G' ? '2' : null });""", r"""		let ssid = default_ssid(suffix);
 		for (let ap in aps)
 			set('wireless', ap['.name'], { ssid, xwrt_managed_ssid: ssid, key: custom_key, encryption: band == '6G' ? 'sae+ccmp' : 'psk2+ccmp', ieee80211w: band == '6G' ? '2' : null });"""),
 ]
@@ -153,14 +153,6 @@ for old, new in patches:
         source = source.replace(old, new, 1)
 wireless.write_text(source)
 
-service = Path(sys.argv[2])
-source = service.read_text()
-old = '\tprocd_add_reload_trigger router-tool\n'
-new = old + '\tprocd_add_reload_trigger system\n'
-if new not in source:
-    if source.count(old) != 1:
-        raise SystemExit('Unsupported Router Tool service triggers')
-    service.write_text(source.replace(old, new, 1))
 PY
 fi
 
