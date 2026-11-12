@@ -58,14 +58,21 @@ source = wireless.read_text()
 old = "\t\tlet mode = htmode(caps, width);\n"
 new = r"""		if (band == '5G') {
 			let model = board?.model?.id;
+			let path = radio.path || array(board.wlan[radio.phy]?.path)[0];
 			if (model == 'jdcloud,re-ss-01')
 				suffix = '5G';
-			else if (model == 'jdcloud,re-cs-02') {
+			else if (model == 'jdcloud,re-cs-02' && path) {
 				// Athena's PCIe radio is 5.2 GHz; its integrated 5 GHz radio uses the generic 5G suffix.
-				let path = radio.path || array(board.wlan[radio.phy]?.path)[0];
-				if (path)
-					suffix = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//) ? '5.2G' : '5G';
+				let pci = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//);
+				suffix = pci ? '5.2G' : '5G';
 			}
+			// CN only allows 5150-5350 and 5725-5850. Prefer the radio's own
+			// default channel, but never let auto selection pick a DFS channel.
+			let preferred = '' + (caps.first_channel ?? '');
+			channel = match(preferred, /^[0-9]+$/) && !match(preferred, /^(1[0-3][0-9]|14[0-4])$/) ?
+				preferred : (suffix == '5.2G' ? '36' : '149');
+			// 160 MHz is not available on the 5725-5850 MHz (UNII-3) segment.
+			width = min(width, 80);
 		}
 """ + old
 patches = [
@@ -93,6 +100,8 @@ patches = [
 function default_ssid(suffix) {
 	return 'XWRT-' + (suffix == '5.8G' ? '5G' : suffix);
 }"""),
+    (r"""		set('wireless', radio['.name'], { country: 'US', channel, htmode: mode });""",
+     r"""		set('wireless', radio['.name'], { country: band == '6G' ? '00' : 'CN', channel, htmode: mode });"""),
     ('let defaults_loaded = false, custom_ssid, custom_key;',
      'let defaults_loaded = false, custom_key;'),
     (r"""		custom_ssid = defaults?.ssid;
@@ -316,14 +325,24 @@ uc = Path(sys.argv[1])
 source = uc.read_text()
 old = "set ${s}.country='${country || 'CN'}'"
 new = "set ${s}.country='CN'"
+old_channel = "\t\tlet channel = rband.default_channel ?? \"auto\";\n"
+new_channel = old_channel + """\t\t// 5470-5730 MHz (channels 100-144) is unavailable in the CN database.
+\t\tif (band_name == \"5G\" && match('' + channel, /^(1[0-3][0-9]|14[0-4])$/))
+\t\t\tchannel = 149;
+"""
 if new not in source:
     if old not in source:
         raise SystemExit('Unsupported wifi-scripts country default')
-    uc.write_text(source.replace(old, new, 1))
+    source = source.replace(old, new, 1)
+if new_channel not in source:
+    if source.count(old_channel) != 1:
+        raise SystemExit('Unsupported wifi-scripts channel default')
+    source = source.replace(old_channel, new_channel, 1)
+uc.write_text(source)
 PY
 fi
 
-# Upgrades keep their old wireless config, so fix the 5G country at boot too.
+# Upgrades keep their old wireless config, so fix 5G country and invalid channels at boot.
 WIFI_DEFAULTS=files/etc/uci-defaults/98-xwrt-wifi
 mkdir -p files/etc/uci-defaults
 cat > "$WIFI_DEFAULTS" <<'EOF'
@@ -332,8 +351,25 @@ cat > "$WIFI_DEFAULTS" <<'EOF'
 changed=
 for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
   [ "$(uci -q get "wireless.$radio.band")" = "5g" ] || continue
-  [ "$(uci -q get "wireless.$radio.country")" = "CN" ] && continue
-  uci -q set "wireless.$radio.country=CN" && changed=1
+  if [ "$(uci -q get "wireless.$radio.country")" != "CN" ]; then
+    uci -q set "wireless.$radio.country=CN" && changed=1
+  fi
+  channel="$(uci -q get "wireless.$radio.channel")"
+  case "$channel" in
+    ''|auto|*[!0-9]*) ;;
+    *)
+      if { [ "$channel" -ge 36 ] && [ "$channel" -le 64 ]; } ||
+         { [ "$channel" -ge 149 ] && [ "$channel" -le 165 ]; }; then
+        :
+      else
+        uci -q set "wireless.$radio.channel=149" && changed=1
+      fi
+      ;;
+  esac
+  htmode="$(uci -q get "wireless.$radio.htmode")"
+  case "$htmode" in
+    *160) uci -q set "wireless.$radio.htmode=${htmode%160}80" && changed=1 ;;
+  esac
 done
 [ -z "$changed" ] || uci -q commit wireless
 exit 0
