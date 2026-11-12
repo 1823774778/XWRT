@@ -167,6 +167,11 @@ jobs:
             test -f package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
             grep -q 'relay_ap.enable' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
             grep -q 'auto_relay_ap_disabled' package/emortal/luci-app-router-tool/htdocs/luci-static/resources/tools/router-tool.js
+            grep -Fq "country: band == '6G' ? '00' : 'CN'" package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
+            grep -Fq 'never let auto selection pick a DFS channel' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
+            grep -Fq 'width = min(width, 80)' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc
+            grep -Fq 'channels 100-144' package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc
+            grep -Fq "wireless.\$radio.channel=149" files/etc/uci-defaults/98-xwrt-wifi
           fi
 
       - name: Generate configuration only
