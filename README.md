@@ -16,6 +16,7 @@
 - `.github/workflows/build.yml`：手动/变更触发的构建工作流。
 - `Config/`：平台与通用配置，保持与 OpenWRT-CI 的配置职责一致，但内容按 XWRT 需求重新整理。
 - `Scripts/Settings.sh`：XWRT 默认主机名、地址、Wi-Fi 和 LuCI 设置。
+- `Files/OpenAppFilter/`：OAF 内置中文特征库（构建时覆盖插件自带特征库并补充应用图标）。
 
 ## 许可证
 

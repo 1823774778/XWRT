@@ -126,6 +126,17 @@ jobs:
         run: |
           git clone --depth=1 --single-branch --branch master \
             https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+          # Use the official free Chinese feature library instead of the barely
+          # populated one bundled with the package.
+          feature_dir="$RUNNER_TEMP/openappfilter-feature"
+          rm -rf "$feature_dir"
+          mkdir -p "$feature_dir"
+          tar -xzf "$GITHUB_WORKSPACE/Files/OpenAppFilter/feature4.0_cn_26.09.10-free.tar.gz" -C "$feature_dir"
+          install -m 0644 "$feature_dir/feature.bin" \
+            package/OpenAppFilter/open-app-filter/files/feature.bin
+          cp "$feature_dir/app_icons/"*.png \
+            package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/oaf/app_icons/
+          echo "01602a7c86a33c2f50a3dc661971a4cf  package/OpenAppFilter/open-app-filter/files/feature.bin" | md5sum -c -
 
       - name: Add XWRT OTA package
         if: ${{ inputs.target == 'IPQ60XX' }}
