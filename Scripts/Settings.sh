@@ -71,8 +71,8 @@ new = r"""		if (band == '5G') {
 			let preferred = '' + (caps.first_channel ?? '');
 			channel = match(preferred, /^[0-9]+$/) && !match(preferred, /^(1[0-3][0-9]|14[0-4])$/) ?
 				preferred : (suffix == '5.2G' ? '36' : '149');
-			// 160 MHz is not available on the 5725-5850 MHz (UNII-3) segment.
-			width = min(width, 80);
+			// 160 MHz is only available below 5725 MHz (UNII-3 is 80 MHz wide).
+			width = min(width, int(channel) >= 149 ? 80 : 160);
 		}
 """ + old
 patches = [
@@ -348,6 +348,7 @@ mkdir -p files/etc/uci-defaults
 cat > "$WIFI_DEFAULTS" <<'EOF'
 #!/bin/sh
 [ -f /etc/config/wireless ] || exit 0
+board="$(cat /tmp/sysinfo/board_name 2>/dev/null)"
 changed=
 for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
   [ "$(uci -q get "wireless.$radio.band")" = "5g" ] || continue
@@ -356,20 +357,41 @@ for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-devic
   fi
   channel="$(uci -q get "wireless.$radio.channel")"
   case "$channel" in
-    ''|auto|*[!0-9]*) ;;
-    *)
-      if { [ "$channel" -ge 36 ] && [ "$channel" -le 64 ]; } ||
-         { [ "$channel" -ge 149 ] && [ "$channel" -le 165 ]; }; then
-        :
-      else
-        uci -q set "wireless.$radio.channel=149" && changed=1
-      fi
+    ''|auto)
+      case "$board" in
+        jdcloud,re-cs-02)
+          case "$(uci -q get "wireless.$radio.path")" in
+            *pci*) channel=36 ;;
+            *) channel=149 ;;
+          esac
+          ;;
+        jdcloud,re-ss-01) channel=149 ;;
+        *) continue ;;
+      esac
+      uci -q set "wireless.$radio.channel=$channel" && changed=1
       ;;
+    *[!0-9]*) continue ;;
   esac
+  if { [ "$channel" -ge 36 ] && [ "$channel" -le 64 ]; } ||
+     { [ "$channel" -ge 149 ] && [ "$channel" -le 165 ]; }; then
+    :
+  else
+    uci -q set "wireless.$radio.channel=149" && channel=149 && changed=1
+  fi
   htmode="$(uci -q get "wireless.$radio.htmode")"
-  case "$htmode" in
-    *160) uci -q set "wireless.$radio.htmode=${htmode%160}80" && changed=1 ;;
-  esac
+  if [ "$channel" -ge 149 ]; then
+    case "$htmode" in
+      *160) uci -q set "wireless.$radio.htmode=${htmode%160}80" && changed=1 ;;
+    esac
+  elif [ "$board" = "jdcloud,re-cs-02" ]; then
+    case "$(uci -q get "wireless.$radio.path")" in
+      *pci*)
+        case "$htmode" in
+          *80) uci -q set "wireless.$radio.htmode=${htmode%80}160" && changed=1 ;;
+        esac
+        ;;
+    esac
+  fi
 done
 [ -z "$changed" ] || uci -q commit wireless
 exit 0
