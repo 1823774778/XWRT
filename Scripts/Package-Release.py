@@ -114,7 +114,7 @@ def main():
         "",
         "默认 Wi-Fi 名称：主机名加频段后缀（如 `XWRT-2.4G`）。",
         f"默认 Wi-Fi 密码：{os.environ['WRT_WORD']}",
-        "保留配置升级时，网络和 Wi-Fi 设置沿用设备原配置。",
+        "保留配置升级时保留自定义 Wi-Fi 名称和密码；可识别的旧默认名称会更新为主机名加后缀。",
         "",
         "插件列表（根据本次固件的软件包清单生成）：",
         " ".join(f"`{plugin}`" for plugin in plugins) or "无额外 LuCI 插件。",

@@ -83,12 +83,15 @@ patches = [
 	// Ucode string offsets count bytes. Avoid cutting a UTF-8 code point.
 	while (size > 0 && (ord(hostname, size) & 0xc0) == 0x80) size--;
 	return substr(hostname, 0, size) + '-' + tail;
-}""", r"""function default_ssid(uci, suffix) {
-	let hostname = uci.get_first('system', 'system', 'hostname') || 'OWRT';
+}""", r"""function format_ssid(hostname, suffix) {
 	let size = min(length(hostname), 31 - length(suffix));
 	// Ucode string offsets count bytes. Avoid cutting a UTF-8 code point.
 	while (size > 0 && size < length(hostname) && (ord(hostname, size) & 0xc0) == 0x80) size--;
 	return substr(hostname, 0, size) + '-' + suffix;
+}
+
+function default_ssid(uci, suffix) {
+	return format_ssid(uci.get_first('system', 'system', 'hostname') || 'OWRT', suffix);
 }"""),
     ('let defaults_loaded = false, custom_ssid, custom_key;',
      'let defaults_loaded = false, custom_key;'),
@@ -115,12 +118,19 @@ patches = [
 		if (length(filter(attached, iface => iface.mode != 'ap' || iface.wds == '1' || length(array(iface.device)) != 1 || iface.mlo == '1'))) {""", r"""	function plain_ap(iface) {
 		return iface.mode == 'ap' && iface.wds != '1' && length(array(iface.device)) == 1 && iface.mlo != '1';
 	}
-	// Only rename interfaces whose current SSID is still the one we wrote.
+	// Adopt a matching legacy default once; preserve names changed by the user.
 	for (let ap in interfaces) {
+		if (!plain_ap(ap)) continue;
 		let saved = ap.xwrt_managed_ssid;
-		if (!plain_ap(ap) || !saved || ap.ssid != saved) continue;
-		let suffix = match(saved, /-([^-]+)$/)?.[1];
+		let suffix = match(ap.ssid || '', /-(2\.4G|5\.2G|5\.8G|6G)$/)?.[1];
 		if (!suffix) continue;
+		if (!saved) {
+			let prefix = uci.get('router-tool', 'defaults', 'ssid');
+			if (uci.get('router-tool', array(ap.device)[0], 'defaults_done') != '1' ||
+				type(prefix) != 'string' || !length(prefix) || ap.ssid != format_ssid(prefix, suffix)) continue;
+			saved = ap.ssid;
+		}
+		if (ap.ssid != saved) continue;
 		let ssid = default_ssid(uci, suffix);
 		set('wireless', ap['.name'], { ssid, xwrt_managed_ssid: ssid });
 	}
@@ -275,6 +285,15 @@ import sys
 
 path = Path(sys.argv[1])
 source = path.read_text()
+old_conflict = "\tif (!lan.some(a => upstream.some(b => overlaps(a, b)))) return;\n"
+new_conflict = old_conflict + """	// Leave the overlap in place for the backend's automatic Relay AP switch.
+	if (uci.get('router-tool', 'main', 'auto_relay_ap') !== '0' &&
+		uci.get('router-tool', 'main', 'auto_relay_ap_disabled') !== '1') return;
+"""
+if new_conflict not in source:
+    if source.count(old_conflict) != 1:
+        raise SystemExit('Unsupported Router Tool LuCI subnet conflict logic')
+    source = source.replace(old_conflict, new_conflict, 1)
 old_enable = "\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
 new_enable = "\tuci.unset('router-tool', 'main', 'auto_relay_ap_disabled');\n\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
 if new_enable not in source:
