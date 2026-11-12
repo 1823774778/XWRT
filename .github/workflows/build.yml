@@ -143,6 +143,12 @@ jobs:
           bash ../Scripts/Settings.sh
           bash ../Scripts/Prepare.sh
           make defconfig
+          grep -qx 'CONFIG_USE_APK=y' .config
+          grep -qx 'CONFIG_PACKAGE_apk-openssl=y' .config
+          test -f files/etc/apk/config
+          test -f files/etc/apk/repositories.d/customfeeds.list
+          grep -Fqx 'allow-untrusted' files/etc/apk/config
+          grep -Fq 'Official target and feed repositories are generated in distfeeds.list.' files/etc/apk/repositories.d/customfeeds.list
           if [ "$TARGET" = IPQ60XX ]; then
             expected=$(printf '%s\n' \
               'CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-cs-02=y' \
@@ -152,6 +158,11 @@ jobs:
               printf 'Unexpected device selection:\n%s\n' "$selected" >&2
               exit 1
             fi
+            grep -qx 'CONFIG_PACKAGE_luci-app-router-tool=y' .config
+            grep -q 'option auto_relay_ap '\''1'\''' package/emortal/luci-app-router-tool/root/etc/config/router-tool
+            test -f package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
+            grep -q 'relay_ap.enable' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
+            grep -q 'auto_relay_ap_disabled' package/emortal/luci-app-router-tool/htdocs/luci-static/resources/tools/router-tool.js
           fi
 
       - name: Generate configuration only
