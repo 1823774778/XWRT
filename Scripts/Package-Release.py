@@ -90,7 +90,6 @@ def main():
     repository = os.environ["GITHUB_REPOSITORY"]
     kernel = overview["linux_kernel"]["version"]
     ip = os.environ["WRT_IP"]
-    ssid = os.environ["WRT_SSID"]
     notes = [
         f"这是 XWRT 的 {board}/{subtarget} 平台固件，包含下列本次实际编译的设备。",
         "请根据型号选择附件；`sysupgrade` 用于升级，`factory` 用途请按对应设备刷机方式确认。",
@@ -113,9 +112,9 @@ def main():
         "默认登录用户：root",
         "默认登录密码：无，请首次登录后设置；保留配置升级沿用原密码。",
         "",
-        f"默认 Wi-Fi 名称：{ssid}（有无线硬件时按频段追加后缀，如 {ssid}-2.4G）",
+        "默认 Wi-Fi 名称：`XWRT-2.4G`、`XWRT-5G`；雅典娜另有 `XWRT-5.2G`。",
         f"默认 Wi-Fi 密码：{os.environ['WRT_WORD']}",
-        "保留配置升级时，网络和 Wi-Fi 设置沿用设备原配置。",
+        "保留配置升级时保留自定义 Wi-Fi 名称和密码；可识别的旧默认名称会更新为 XWRT 加频段后缀。",
         "",
         "插件列表（根据本次固件的软件包清单生成）：",
         " ".join(f"`{plugin}`" for plugin in plugins) or "无额外 LuCI 插件。",

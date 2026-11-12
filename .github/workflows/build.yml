@@ -37,7 +37,6 @@ env:
   BUILD_DIR: wrt
   CCACHE_MAXSIZE: 2G
   WRT_IP: 192.168.10.1
-  WRT_SSID: XWRT
   WRT_WORD: '12345678'
 
 jobs:
@@ -114,7 +113,8 @@ jobs:
           cp feeds.conf.default feeds.conf
           printf '%s\n' \
             'src-git vantage https://github.com/anothaDev/luci-theme-vantage.git;main' \
-            'src-git viking https://github.com/VIKINGYFY/packages.git;main' >> feeds.conf
+            'src-git viking https://github.com/VIKINGYFY/packages.git;main' \
+            'src-git meshzw https://github.com/1823774778/meshzw.git;main' >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a -p packages
           ./scripts/feeds install -a -p luci
@@ -159,6 +159,10 @@ jobs:
               exit 1
             fi
             grep -qx 'CONFIG_PACKAGE_luci-app-router-tool=y' .config
+            grep -qx 'CONFIG_PACKAGE_luci-app-wifiroam=y' .config
+            grep -qx 'CONFIG_PACKAGE_wifiroam=y' .config
+            test -f package/feeds/meshzw/luci-app-wifiroam/Makefile
+            test -f package/feeds/meshzw/wifiroam/Makefile
             grep -q 'option auto_relay_ap '\''1'\''' package/emortal/luci-app-router-tool/root/etc/config/router-tool
             test -f package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
             grep -q 'relay_ap.enable' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
