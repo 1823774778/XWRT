@@ -124,6 +124,9 @@ jobs:
       - name: Add OpenAppFilter package
         working-directory: ${{ env.BUILD_DIR }}
         run: |
+          # The packages feed ships an older open-app-filter that defines the
+          # same appfilter/kmod-oaf symbols and breaks kconfig resolution.
+          rm -rf package/feeds/*/open-app-filter
           git clone --depth=1 --single-branch --branch master \
             https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
           # Use the official free Chinese feature library instead of the barely
@@ -163,6 +166,7 @@ jobs:
           grep -qx 'CONFIG_USE_APK=y' .config
           grep -qx 'CONFIG_PACKAGE_apk-openssl=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-app-oaf=y' .config
+          grep -qx 'CONFIG_PACKAGE_kmod-oaf=y' .config
           test -f files/etc/apk/config
           test -f files/etc/apk/repositories.d/customfeeds.list
           grep -Fqx 'allow-untrusted' files/etc/apk/config
