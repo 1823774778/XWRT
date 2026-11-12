@@ -61,7 +61,7 @@ new = r"""		if (band == '5G') {
 			if (model == 'jdcloud,re-ss-01')
 				suffix = '5G';
 			else if (model == 'jdcloud,re-cs-02') {
-				// Athena's PCIe radio is 5.2 GHz; its integrated 5 GHz radio is 5.8 GHz.
+				// Athena's PCIe radio is 5.2 GHz; its integrated 5 GHz radio uses the generic 5G suffix.
 				let path = radio.path || array(board.wlan[radio.phy]?.path)[0];
 				if (path)
 					suffix = match(path, /(^|\/)pci[0-9a-f]{4}:[0-9a-f]{2}\//) ? '5.2G' : '5G';
@@ -125,9 +125,12 @@ function default_ssid(suffix) {
 		let suffix = match(ap.ssid || '', /-(2\.4G|5\.2G|5\.8G|5G|6G)$/)?.[1];
 		if (!suffix) continue;
 		if (!saved) {
-			let prefix = uci.get('router-tool', 'defaults', 'ssid');
-			if (uci.get('router-tool', array(ap.device)[0], 'defaults_done') != '1' ||
-				type(prefix) != 'string' || !length(prefix) || ap.ssid != format_ssid(prefix, suffix)) continue;
+			let radio = filter(radios, entry => entry['.name'] == array(ap.device)[0])[0];
+			let bands = { '2g': [ '2.4G' ], '5g': [ '5G', '5.2G', '5.8G' ], '6g': [ '6G' ] }[radio?.band] || [];
+			let prefixes = [ uci.get('router-tool', 'defaults', 'ssid'), uci.get_first('system', 'system', 'hostname') ];
+			if (index(bands, suffix) < 0 || uci.get('router-tool', radio['.name'], 'defaults_done') != '1' ||
+				!length(filter(prefixes, prefix => type(prefix) == 'string' && length(prefix) && ap.ssid == format_ssid(prefix, suffix))))
+				continue;
 			saved = ap.ssid;
 		}
 		if (ap.ssid != saved) continue;
@@ -152,7 +155,6 @@ for old, new in patches:
             raise SystemExit('Unsupported Router Tool wireless naming logic')
         source = source.replace(old, new, 1)
 wireless.write_text(source)
-
 PY
 fi
 
