@@ -1,6 +1,6 @@
 'use strict';
 
-import { equal } from './snapshot.uc';
+import { equal, option_equal, read_snapshot, check_snapshot, lan_context } from './snapshot.uc';
 
 function array(value) {
 	return type(value) == 'array' ? value : value == null ? [] : [ value ];
@@ -201,8 +201,8 @@ function keys_unique(a, b) {
 	return result;
 }
 
-function make_snapshot(before, uci) {
-	let state = { version: 1, mode: 'ap', options: [], created: [], subnet_done: true };
+function make_snapshot(before, uci, lan) {
+	let state = { version: 1, mode: 'ap', options: [], created: [], subnet_done: true, lan };
 	for (let config in [ 'network', 'dhcp', 'firewall', 'wireless' ]) {
 		let old_config = before[config] || {};
 		let new_config = uci.get_all(config) || {};
@@ -231,6 +231,7 @@ function make_snapshot(before, uci) {
 
 export function enable(uci, board, data) {
 	let before = configuration(uci);
+	let lan = lan_context(uci);
 	let topo = topology(uci, board);
 	validate_topology(uci, board, topo);
 	for (let name in [ 'lan', 'wan', 'wan6' ]) ensure(uci, 'network', 'interface', name);
@@ -259,8 +260,66 @@ export function enable(uci, board, data) {
 		}
 	}
 	configure_firewall(uci, 'relay_ap', data.firewall);
-	let state = make_snapshot(before, uci);
+	let state = make_snapshot(before, uci, lan);
 	uci.set('router-tool', 'main', 'ap_state', sprintf('%J', state));
 	uci.set('router-tool', 'main', 'ap_mode', '1');
+	return [ 'network', 'dhcp', 'firewall', 'wireless', 'router-tool' ];
+}
+
+export function restore_needed(uci, upstream4) {
+	let state;
+	try {
+		state = read_snapshot(uci.get('router-tool', 'main', 'ap_state'), 'ap');
+	}
+	catch (e) {
+		return null;
+	}
+	let saved = state.lan;
+	if (!saved) {
+		// Snapshots written before the LAN context was recorded still carry
+		// the previous values in their option list.
+		let proto = null, ipaddr = null, netmask = null;
+		for (let option in state.options) {
+			if (option.config != 'network' || option.sid != 'lan') continue;
+			if (option.key == 'proto') proto = option.value;
+			else if (option.key == 'ipaddr') ipaddr = option.value;
+			else if (option.key == 'netmask') netmask = option.value;
+		}
+		if (ipaddr != null) saved = { proto, ipaddr, netmask };
+	}
+	if (!saved) return null;
+	let upstream = filter(map(upstream4 || [], address => subnet(address)), address => address != null);
+	if (!length(upstream)) return 'lost';
+	let lan = filter(map(array(saved.ipaddr), address => subnet(address, saved.netmask)), address => address != null);
+	if (!length(lan)) return null;
+	if (!length(filter(lan, local => length(filter(upstream, remote => overlap(local, remote))))))
+		return 'moved';
+	return null;
+}
+
+export function disable(uci) {
+	let state = read_snapshot(uci.get('router-tool', 'main', 'ap_state'), 'ap');
+	check_snapshot(uci, state);
+	for (let i = length(state.options) - 1; i >= 0; i--) {
+		let option = state.options[i];
+		if (uci.get_all(option.config, option.sid) == null) continue;
+		if (option_equal(option, uci.get(option.config, option.sid, option.key), option.expected))
+			set_option(uci, option.config, option.sid, option.key, option.value);
+	}
+	for (let i = length(state.created) - 1; i >= 0; i--) {
+		let section = state.created[i];
+		let current = uci.get_all(section.config, section.sid);
+		if (current && equal(section_values(current), section.values))
+			uci.delete(section.config, section.sid);
+	}
+	let wan = uci.get('network', 'wan', 'device');
+	let lan = uci.get('network', 'lan', 'device');
+	let bridge = find_unique(uci, 'network', 'device', section => section.name == lan && section.type == 'bridge');
+	if (wan && index([ null, 'none' ], uci.get('network', 'wan', 'proto')) < 0 &&
+		(wan == lan || bridge && index(array(uci.get('network', bridge, 'ports')), wan) >= 0))
+		die('Relay AP refused: the active WAN device is still part of the LAN bridge');
+	uci.delete('router-tool', 'main', 'ap_state');
+	uci.delete('router-tool', 'main', 'ap_auto');
+	uci.set('router-tool', 'main', 'ap_mode', '0');
 	return [ 'network', 'dhcp', 'firewall', 'wireless', 'router-tool' ];
 }

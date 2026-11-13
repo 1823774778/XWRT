@@ -188,6 +188,9 @@ jobs:
             grep -q 'option auto_relay_ap '\''1'\''' package/emortal/luci-app-router-tool/root/etc/config/router-tool
             test -f package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
             grep -q 'relay_ap.enable' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
+            grep -q 'ap_auto' package/emortal/luci-app-router-tool/root/usr/share/router-tool/auto.uc
+            grep -q 'restore_needed' package/emortal/luci-app-router-tool/root/usr/share/router-tool/relay_ap.uc
+            grep -q 'relay_ap.disable' package/emortal/luci-app-router-tool/root/usr/libexec/router-tool-auto
             grep -q 'auto_relay_ap_disabled' package/emortal/luci-app-router-tool/htdocs/luci-static/resources/tools/router-tool.js
             grep -q "option ssid 'XWRT'" package/emortal/luci-app-router-tool/root/etc/config/router-tool
             if grep -q 'xwrt_managed_ssid' package/emortal/luci-app-router-tool/root/usr/share/router-tool/wireless.uc; then exit 1; fi
