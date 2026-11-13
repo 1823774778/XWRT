@@ -110,9 +110,11 @@ new = """\t\trecorder = null;
 \t\tif (ready) state.subnet_done = true;
 \t\tif (ready || previous != role)
 \t\t\tset('router-tool', 'main', { state: finish_snapshot(uci, state) });
-\t\tif (ready)
+\t\tif (ready) {
 \t\t\tfor (let config in relay_ap.enable(uci, board, data))
 \t\t\t\tchanged[config] = true;
+\t\t\tuci.set('router-tool', 'main', 'ap_auto', '1');
+\t\t}
 \t\t// Do not move the LAN to a different subnet while AP conversion is deferred.
 \t\treturn keys(changed);
 \t}
@@ -131,6 +133,8 @@ import sys
 
 path = Path(sys.argv[1])
 source = path.read_text()
+import_anchor = "import { synchronize } from '/usr/share/router-tool/auto.uc';\n"
+relay_import = "import * as relay_ap from '/usr/share/router-tool/relay_ap.uc';\n"
 board_loader = """\t\tlet board = null;
 \t\tlet text = readfile('/etc/board.json');
 \t\ttry {
@@ -154,15 +158,52 @@ new = """\tlet board = null;
 \t\tlog_once(LOG_WARNING, 'wireless-board', 'Board data is invalid; Relay AP and wireless defaults are deferred: ' + e.message);
 \t}
 \tlet wireless_pending = stat('/tmp/.uci/wireless')?.size;
+\tif (!wireless_pending && ap && uci.get('router-tool', 'main', 'ap_auto') == '1') {
+\t\tlet restore = false;
+\t\tlet reason = null;
+\t\tlet bus = connect();
+\t\tlet status = bus?.call('network.interface.lan', 'status', {});
+\t\tbus?.disconnect();
+\t\tif (status) {
+\t\t\tlet lan_up = status.up == true;
+\t\t\tlet lan_upstream = lan_up ? map(status['ipv4-address'] || [], address => `${address.address}/${address.mask}`) : [];
+\t\t\treason = relay_ap.restore_needed(uci, lan_upstream);
+\t\t\tlet uptime = +split(readfile('/proc/uptime') || '0', ' ')[0];
+\t\t\tif (reason == 'moved')
+\t\t\t\trestore = true;
+\t\t\telse if (reason == 'lost' && uptime > 90) {
+\t\t\t\tif (!lan_up)
+\t\t\t\t\trestore = true;
+\t\t\t\telse {
+\t\t\t\t\tlet since = +readfile('/var/run/router-tool-ap-lost') || 0;
+\t\t\t\t\tif (!since) writefile('/var/run/router-tool-ap-lost', sprintf('%d\\n', uptime));
+\t\t\t\t\telse if (uptime - since >= 20) restore = true;
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t\tif (restore) {
+\t\t\tfor (let config in relay_ap.disable(uci))
+\t\t\t\tif (index(changed, config) < 0) push(changed, config);
+\t\t\tap = false;
+\t\t\tunlink('/var/run/router-tool-ap-lost');
+\t\t\tlog_once(LOG_NOTICE, 'ap-restore', 'Relay AP mode restored after upstream ' + reason);
+\t\t}
+\t\telse if (reason != 'lost')
+\t\t\tunlink('/var/run/router-tool-ap-lost');
+\t}
 \tfor (let config in synchronize(uci, data, upstream, target, board, wireless_pending))
 \t\tif (index(changed, config) < 0) push(changed, config);
 \tap = uci.get('router-tool', 'main', 'ap_mode') == '1';
 """
+if relay_import not in source:
+    if source.count(import_anchor) != 1:
+        raise SystemExit('Unsupported Router Tool auto runner imports')
+    source = source.replace(import_anchor, import_anchor + relay_import, 1)
 if new not in source:
     if source.count(old) != 1 or source.count(board_loader) != 1:
         raise SystemExit('Unsupported Router Tool auto runner synchronization')
     source = source.replace(board_loader, '', 1).replace(old, new, 1)
-    path.write_text(source)
+path.write_text(source)
 PY
 
   python3 - "$ROUTER_TOOL_JS" <<'PY'
@@ -181,13 +222,13 @@ if new_conflict not in source:
         raise SystemExit('Unsupported Router Tool LuCI subnet conflict logic')
     source = source.replace(old_conflict, new_conflict, 1)
 old_enable = "\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
-new_enable = "\tuci.unset('router-tool', 'main', 'auto_relay_ap_disabled');\n\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
+new_enable = "\tuci.unset('router-tool', 'main', 'auto_relay_ap_disabled');\n\tuci.unset('router-tool', 'main', 'ap_auto');\n\tuci.set('router-tool', 'main', 'ap_mode', '1');\n"
 if new_enable not in source:
     if source.count(old_enable) != 1:
         raise SystemExit('Unsupported Router Tool AP enable marker')
     source = source.replace(old_enable, new_enable, 1)
 old_disable = "\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
-new_disable = "\tif (uci.get('router-tool', 'main', 'auto_relay_ap') != '0')\n\t\tuci.set('router-tool', 'main', 'auto_relay_ap_disabled', '1');\n\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
+new_disable = "\tif (uci.get('router-tool', 'main', 'auto_relay_ap') != '0')\n\t\tuci.set('router-tool', 'main', 'auto_relay_ap_disabled', '1');\n\tuci.unset('router-tool', 'main', 'ap_auto');\n\tuci.unset('router-tool', 'main', 'ap_state');\n\tuci.set('router-tool', 'main', 'ap_mode', '0');\n"
 if new_disable not in source:
     if source.count(old_disable) != 1:
         raise SystemExit('Unsupported Router Tool AP disable marker')
