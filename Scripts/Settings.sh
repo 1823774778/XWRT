@@ -2,7 +2,7 @@
 # XWRT build-time defaults. This script is intentionally independent from OpenWRT-CI.
 set -euo pipefail
 
-: "${WRT_THEME:=vantage}"
+: "${WRT_THEME:=7dollar}"
 : "${WRT_NAME:=XWRT}"
 : "${WRT_WORD:=12345678}"
 : "${WRT_IP:=192.168.10.1}"
@@ -243,7 +243,7 @@ if [ -f "$FLASH_JS" ]; then
 fi
 
 touch .config
-sed -i '/^CONFIG_PACKAGE_luci=/d; /^CONFIG_LUCI_LANG_zh_Hans=/d; /^CONFIG_PACKAGE_luci-theme-'"$WRT_THEME"'=/d; /^CONFIG_IMAGEOPT=/d; /^# CONFIG_IMAGEOPT is not set$/d; /^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_DIST=/d; /^CONFIG_PACKAGE_luci-app-vantage=/d' .config
+sed -i '/^CONFIG_PACKAGE_luci=/d; /^CONFIG_LUCI_LANG_zh_Hans=/d; /^CONFIG_PACKAGE_luci-theme-'"$WRT_THEME"'=/d; /^CONFIG_IMAGEOPT=/d; /^# CONFIG_IMAGEOPT is not set$/d; /^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_DIST=/d' .config
 cat >> .config <<EOF
 CONFIG_PACKAGE_luci=y
 CONFIG_LUCI_LANG_zh_Hans=y
@@ -252,12 +252,11 @@ CONFIG_IMAGEOPT=y
 CONFIG_VERSIONOPT=y
 CONFIG_VERSION_DIST="$WRT_NAME"
 EOF
-if [ "$WRT_THEME" = vantage ]; then
-  printf '%s\n' 'CONFIG_PACKAGE_luci-app-vantage=y' >> .config
-fi
 
 # A kept configuration can still select a theme this image no longer ships,
 # which leaves LuCI failing over to a template runtime that is not installed.
+THEME_KEY="${WRT_THEME^}"
+[ "$WRT_THEME" = 7dollar ] && THEME_KEY=7Dollar
 THEME_DEFAULTS=files/etc/uci-defaults/99-xwrt-theme
 mkdir -p files/etc/uci-defaults
 cat > "$THEME_DEFAULTS" <<EOF
@@ -268,7 +267,7 @@ for key in \$(uci -q show luci.themes 2>/dev/null | sed -n 's/^luci\.themes\.\([
 done
 base="\$(uci -q get luci.main.mediaurlbase)"
 if [ -z "\$base" ] || [ ! -d "/www/luci-static/\${base##*/}" ]; then
-  uci -q set luci.themes.${WRT_THEME^}=/luci-static/$WRT_THEME
+  uci -q set luci.themes.$THEME_KEY=/luci-static/$WRT_THEME
   uci -q set luci.main.mediaurlbase=/luci-static/$WRT_THEME
 fi
 uci -q commit luci

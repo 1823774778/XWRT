@@ -112,14 +112,18 @@ jobs:
         run: |
           cp feeds.conf.default feeds.conf
           printf '%s\n' \
-            'src-git vantage https://github.com/anothaDev/luci-theme-vantage.git;main' \
             'src-git viking https://github.com/VIKINGYFY/packages.git;main' \
             'src-git meshzw https://github.com/1823774778/meshzw.git;main' >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a -p packages
           ./scripts/feeds install -a -p luci
           ./scripts/feeds install -a
-          ./scripts/feeds install -p vantage luci-theme-vantage
+
+      - name: Add 7Dollar theme
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          git clone --depth=1 --single-branch --branch main \
+            https://github.com/itsmaiGe/luci-theme-7dollar.git package/luci-theme-7dollar
 
       - name: Add OpenAppFilter package
         working-directory: ${{ env.BUILD_DIR }}
@@ -167,6 +171,7 @@ jobs:
           grep -qx 'CONFIG_PACKAGE_apk-openssl=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-app-oaf=y' .config
           grep -qx 'CONFIG_PACKAGE_kmod-oaf=y' .config
+          grep -qx 'CONFIG_PACKAGE_luci-theme-7dollar=y' .config
           test -f files/etc/apk/config
           test -f files/etc/apk/repositories.d/customfeeds.list
           grep -Fqx 'allow-untrusted' files/etc/apk/config
