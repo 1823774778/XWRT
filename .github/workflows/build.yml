@@ -172,7 +172,7 @@ jobs:
           grep -qx 'CONFIG_PACKAGE_luci-app-oaf=y' .config
           grep -qx 'CONFIG_PACKAGE_kmod-oaf=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-theme-7dollar=y' .config
-          grep -q 'dynlink=luci.7dollar' package/luci-theme-7dollar/Makefile
+          grep -q 'dynlink=luci.7dollar' feeds/luci/luci.mk
           test -f files/etc/apk/config
           test -f files/etc/apk/repositories.d/customfeeds.list
           grep -Fqx 'allow-untrusted' files/etc/apk/config
