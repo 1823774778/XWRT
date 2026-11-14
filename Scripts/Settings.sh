@@ -37,6 +37,25 @@ for collection in feeds/luci/collections/*/Makefile; do
   sed -i '/luci-app-attendedsysupgrade/d; s/luci-theme-bootstrap/luci-theme-'"$WRT_THEME"'/g' "$collection"
 done
 
+# 7Dollar ships its own ucode module and its templates import luci.7dollar.
+# The host ucode compiler used for template precompilation cannot resolve it,
+# so force that import to be resolved at runtime on the target.
+THEME_MAKEFILE=package/luci-theme-7dollar/Makefile
+if [ -f "$THEME_MAKEFILE" ] && ! grep -q 'dynlink=luci.7dollar' "$THEME_MAKEFILE"; then
+  python3 - "$THEME_MAKEFILE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+anchor = "include $(TOPDIR)/feeds/luci/luci.mk\n"
+extra = "LUCI_UT_CFLAGS := $(LUCI_UT_CFLAGS),dynlink=luci.7dollar\n"
+if source.count(anchor) != 1:
+    raise SystemExit('Unsupported 7Dollar theme Makefile')
+path.write_text(source.replace(anchor, anchor + extra, 1))
+PY
+fi
+
 CFG_FILE=package/base-files/files/bin/config_generate
 if [ -f "$CFG_FILE" ]; then
   sed -i "s/192\\.168\\.[0-9]*\\.[0-9]*/$WRT_IP/g; s/hostname='.*'/hostname='$WRT_NAME'/g" "$CFG_FILE"
